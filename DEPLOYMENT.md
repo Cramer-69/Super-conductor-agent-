@@ -116,8 +116,20 @@ Now you have an app icon on your home screen! 🎉
 - Make sure you have OpenAI API credits
 
 ### "No response"
-- Check Render logs: Dashboard → Logs  
+- Check Render logs: Dashboard → your service → **Logs** tab
+- Copy the relevant error lines and paste them in a [GitHub issue](https://github.com/Cramer-69/conductor-agent/issues) for help
 - Make sure the ingestion completed (vector database has data)
+
+### How to Share Render Logs
+
+1. Open [dashboard.render.com](https://dashboard.render.com)
+2. Click your service name → **"Logs"** tab
+3. Select and copy the error lines
+4. Paste them (wrapped in triple backticks) into a GitHub issue or PR comment
+
+### How to Report Any Error
+
+See the [Reporting Issues section in README.md](README.md#-reporting-issues--getting-help) for a full guide on where to upload screenshots, paste logs, and what information to include.
 
 ### App won't install
 - Use Safari on iPhone or Chrome on Android  

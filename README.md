@@ -246,6 +246,47 @@ ANTIGRAVITY_BRAIN_DIR=C:/Users/jjc29/.gemini/antigravity/brain
 
 MIT License - Feel free to use and modify
 
+## 🐛 Reporting Issues & Getting Help
+
+If you run into an error, here's how to get help quickly:
+
+### Option 1: Open a GitHub Issue
+
+1. Go to the [Issues tab](https://github.com/Cramer-69/conductor-agent/issues) and click **"New issue"**
+2. Use the **Bug Report** template and fill in all sections
+3. **Attach screenshots** by dragging and dropping image files directly into the issue text box (GitHub hosts them for you)
+4. **Paste error text** inside a fenced code block so it's readable:
+   ````
+   ```
+   Traceback (most recent call last):
+     ...
+   ```
+   ````
+
+### Option 2: Share Render Logs (for cloud deployment issues)
+
+1. Open your [Render dashboard](https://dashboard.render.com)
+2. Click your service → **"Logs"** tab
+3. Copy the relevant log lines and paste them into a GitHub issue or PR comment
+
+### Option 3: Chat / PR Comment
+
+- Paste error output directly in a PR review comment or chat message
+- For screenshots: drag and drop the image into the GitHub comment box — GitHub will upload and embed it automatically
+
+### What to Include When Reporting
+
+| Item | How to get it |
+|------|--------------|
+| **Error message / traceback** | Copy from terminal or Render logs |
+| **Screenshot** | Drag & drop into GitHub issue/PR text box |
+| **Python version** | `python --version` |
+| **OS** | e.g. Windows 11, macOS 14, Ubuntu 22.04 |
+| **Steps to reproduce** | What you ran and in what order |
+| **`.env` settings** (no secrets!) | Which env vars are set (not their values) |
+
+> **Privacy note**: Never paste your actual API keys. Redact them as `sk-...` or `<redacted>` before sharing logs.
+
 ## 🤝 Contributing
 
 This is a personal project, but feel free to fork and adapt for your needs!

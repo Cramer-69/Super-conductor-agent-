@@ -71,7 +71,7 @@ You: /exit
 
 ## 📖 Full Documentation
 
-See [README.md](file:///c:/Users/jjc29/antigravity%20agent%201/conductor_agent/README.md) for complete documentation.
+See [README.md](README.md) for complete documentation, including the [Reporting Issues & Getting Help](README.md#-reporting-issues--getting-help) section if you run into problems.
 
 ## ✨ You're All Set!
 
