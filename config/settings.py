@@ -1,8 +1,12 @@
 """
 Configuration management for Conductor Agent.
 Loads settings from environment variables and .env file.
+
+OPENAI_API_KEY must be set in the environment (or in a local .env file).
+The application will refuse to start if this key is absent.
 """
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 from typing import Optional
@@ -24,6 +28,21 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = None
     perplexity_api_key: Optional[str] = None
     xai_api_key: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _require_openai_api_key(self) -> "Settings":
+        """Fail fast with a clear message when OPENAI_API_KEY is not configured."""
+        key = (self.openai_api_key or "").strip()
+        if not key or key == "your_openai_api_key_here":
+            raise ValueError(
+                "\n\nOPENAI_API_KEY is not set.\n"
+                "  • Local development : copy .env.example → .env and add your key.\n"
+                "  • Docker            : pass -e OPENAI_API_KEY=sk-... (or --env-file .env).\n"
+                "  • Cloud Run / GCP   : mount the secret with --set-secrets "
+                "OPENAI_API_KEY=openai-api-key:latest\n"
+                "See README.md for full instructions.\n"
+            )
+        return self
     
     # Model Configuration
     conductor_model: str = "gpt-4o-mini"

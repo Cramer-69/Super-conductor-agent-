@@ -1,0 +1,36 @@
+# Environment secrets - NEVER commit .env
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Data directories (may contain personal conversation data)
+data/raw/
+data/processed/
+data/chroma_db/
+
+# Logs
+logs/*.log
+
+# Temp audio files
+temp_audio/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

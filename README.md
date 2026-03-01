@@ -30,6 +30,15 @@ This will:
 - **Perplexity** (Search enabled)
 - **OpenAI** (Fallback)
 
+## 🔐 API Key Setup (Important — Read First)
+
+The app requires `OPENAI_API_KEY` at startup. **Never commit your key to Git.**
+
+`.env` is listed in `.gitignore` so it will not be accidentally committed.
+Use `.env.example` as the template — it contains only placeholder values and is safe to commit.
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Install Dependencies
@@ -44,14 +53,21 @@ pip install -r requirements.txt
 Copy the example environment file and add your API keys:
 
 ```bash
+# Linux / macOS
+cp .env.example .env
+
+# Windows
 copy .env.example .env
 ```
 
-Edit `.env` and add your OpenAI API key:
+Edit `.env` and replace the placeholder with your real key:
 
 ```
 OPENAI_API_KEY=sk-your-key-here
 ```
+
+If the key is missing or still set to the placeholder value, the app will refuse to start
+with a clear error message pointing to these instructions.
 
 ### 3. Export Your Conversations
 
@@ -105,7 +121,87 @@ python ingest.py --reset --antigravity "C:/Users/jjc29/.gemini/antigravity/brain
 python -m cli.interactive
 ```
 
-## 💡 Usage Examples
+### 6. Start the API / Web Server (local)
+
+```bash
+uvicorn api.server:app --host 0.0.0.0 --port 8000
+# or
+python api/server.py
+```
+
+---
+
+## 🐳 Running with Docker
+
+Build the image once:
+
+```bash
+docker build -t conductor-agent .
+```
+
+Run — pass the key at runtime, **not** as a build argument:
+
+```bash
+# Option A: inline env var
+docker run -e OPENAI_API_KEY=sk-your-key-here -p 8000:8000 conductor-agent
+
+# Option B: use your local .env file (never committed to Git)
+docker run --env-file .env -p 8000:8000 conductor-agent
+```
+
+---
+
+## ☁️ Cloud Run Deployment (recommended for production)
+
+Use **Google Cloud Secret Manager** so your key is never stored in plain text anywhere.
+
+### 1. Store the secret
+
+```bash
+# Create the secret (one-time)
+echo -n "sk-your-key-here" | \
+  gcloud secrets create openai-api-key \
+    --data-file=- \
+    --replication-policy=automatic
+```
+
+### 2. Build and push the container
+
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+
+docker build -t gcr.io/$PROJECT_ID/conductor-agent .
+docker push gcr.io/$PROJECT_ID/conductor-agent
+```
+
+### 3. Deploy to Cloud Run (mounts the secret as an env var)
+
+```bash
+gcloud run deploy conductor-agent \
+  --image gcr.io/$PROJECT_ID/conductor-agent \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-secrets OPENAI_API_KEY=openai-api-key:latest
+```
+
+Cloud Run injects the secret value into the `OPENAI_API_KEY` environment variable
+automatically — no plain-text key ever touches a config file or the container image.
+
+### 4. Rotate the key (when needed)
+
+```bash
+# Add a new version
+echo -n "sk-new-key-here" | \
+  gcloud secrets versions add openai-api-key --data-file=-
+
+# Re-deploy to pick up the latest version
+gcloud run deploy conductor-agent \
+  --image gcr.io/$PROJECT_ID/conductor-agent \
+  --set-secrets OPENAI_API_KEY=openai-api-key:latest
+```
+
+---
 
 ### Basic Search
 
@@ -212,8 +308,11 @@ ANTIGRAVITY_BRAIN_DIR=C:/Users/jjc29/.gemini/antigravity/brain
 
 ### API Key Errors
 
-- Verify `OPENAI_API_KEY` is set in `.env`
-- Ensure the key has sufficient credits
+- The app prints a clear error at startup if `OPENAI_API_KEY` is missing — follow its instructions.
+- For **local** usage: ensure `.env` exists and contains your real key (not the placeholder).
+- For **Docker**: pass `-e OPENAI_API_KEY=sk-...` or `--env-file .env` to `docker run`.
+- For **Cloud Run**: use `--set-secrets OPENAI_API_KEY=openai-api-key:latest` (see *Cloud Run Deployment* above).
+- Ensure the key has sufficient credits.
 
 ### Import Errors
 

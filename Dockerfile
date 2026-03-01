@@ -1,5 +1,12 @@
 # Conductor Voice Agent
 # Production deployment with Gunicorn
+#
+# ⚠️  SECRETS: Do NOT bake OPENAI_API_KEY into the image.
+#     • Local Docker  : docker run -e OPENAI_API_KEY=sk-... ...
+#                       OR  docker run --env-file .env ...
+#     • Cloud Run     : gcloud run deploy ... \
+#                         --set-secrets OPENAI_API_KEY=openai-api-key:latest
+#     See README.md for full instructions.
 
 FROM python:3.11-slim
 
