@@ -1,3 +1,6 @@
+# DEPRECATED: Render deployment is no longer the recommended approach.
+# This project now deploys to Google Cloud Run via Docker.
+# See DEPLOYMENT.md for the current Google Cloud deployment guide.
 services:
   - type: web
     name: conductor-voice-agent

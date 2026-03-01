@@ -3,6 +3,7 @@ Configuration management for Conductor Agent.
 Loads settings from environment variables and .env file.
 """
 
+import logging
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 from typing import Optional
@@ -87,6 +88,40 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+_PLACEHOLDER_KEYS = {
+    "your_openai_api_key_here",
+    "sk-your-key-here",
+    "sk-your-actual-key-here",
+}
+
+
+def validate_startup_config() -> None:
+    """
+    Validate required environment variables at startup.
+    Logs clear error messages for missing or misconfigured values.
+    Does NOT exit the process – callers decide whether the error is fatal.
+    """
+    _log = logging.getLogger(__name__)
+
+    if not settings.validate_api_keys():
+        _log.error(
+            "CONFIGURATION ERROR: No LLM API key found. "
+            "Set at least one of the following environment variables: "
+            "OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY. "
+            "Never hardcode secrets – use a .env file locally or "
+            "Google Cloud Secret Manager in production. "
+            "See DEPLOYMENT.md for details."
+        )
+
+    if settings.openai_api_key and settings.openai_api_key.strip() in _PLACEHOLDER_KEYS:
+        _log.error(
+            "CONFIGURATION ERROR: OPENAI_API_KEY appears to be a placeholder value. "
+            "Replace it with a real key from https://platform.openai.com/api-keys. "
+            "If you accidentally exposed a real key, rotate it immediately at "
+            "https://platform.openai.com/api-keys and never commit secrets to source control."
+        )
+
+
 # Ensure required directories exist
 def init_directories():
     """Create necessary directories if they don't exist."""
@@ -106,3 +141,4 @@ def init_directories():
 
 # Initialize on import
 init_directories()
+validate_startup_config()
