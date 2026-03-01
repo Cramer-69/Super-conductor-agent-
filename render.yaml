@@ -1,16 +1,19 @@
-services:
-  - type: web
-    name: conductor-voice-agent
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn api.server:app --bind 0.0.0.0:$PORT --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120
-    envVars:
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: CHROMA_PERSIST_DIR
-        value: /opt/render/project/src/data/chroma_db
-      - key: LOG_LEVEL
-        value: INFO
+# DEPRECATED – Render.com deployment is no longer supported.
+# See DEPLOYMENT.md for Google Cloud Run deployment instructions.
+#
+# services:
+#   - type: web
+#     name: conductor-voice-agent
+#     env: python
+#     plan: free
+#     buildCommand: pip install -r requirements.txt
+#     startCommand: gunicorn api.server:app --bind 0.0.0.0:$PORT --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120
+#     envVars:
+#       - key: OPENAI_API_KEY
+#         sync: false
+#       - key: PYTHON_VERSION
+#         value: 3.11.0
+#       - key: CHROMA_PERSIST_DIR
+#         value: /opt/render/project/src/data/chroma_db
+#       - key: LOG_LEVEL
+#         value: INFO

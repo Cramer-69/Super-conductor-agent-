@@ -1,0 +1,40 @@
+# Environment / secrets – NEVER commit real credentials
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+
+# Runtime artefacts
+logs/
+temp_audio/
+data/chroma_db/
+
+# OS
+.DS_Store
+Thumbs.db

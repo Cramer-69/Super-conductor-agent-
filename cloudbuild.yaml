@@ -1,0 +1,50 @@
+# Cloud Build pipeline – builds, pushes, and deploys to Cloud Run.
+#
+# Required substitutions (set in trigger or pass with --substitutions):
+#   _REGION   – e.g. us-central1
+#   _SERVICE  – Cloud Run service name, e.g. conductor-agent
+#
+# The image is pushed to Artifact Registry:
+#   <_REGION>-docker.pkg.dev/<PROJECT_ID>/<_SERVICE>/<_SERVICE>
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE: conductor-agent
+
+steps:
+  # 1. Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_SERVICE}/${_SERVICE}:$COMMIT_SHA'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_SERVICE}/${_SERVICE}:latest'
+      - '.'
+
+  # 2. Push both tags to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_SERVICE}/${_SERVICE}'
+
+  # 3. Deploy the new image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - '${_SERVICE}'
+      - '--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_SERVICE}/${_SERVICE}:$COMMIT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--set-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest'
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_SERVICE}/${_SERVICE}:$COMMIT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_SERVICE}/${_SERVICE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

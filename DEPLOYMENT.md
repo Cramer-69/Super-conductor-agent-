@@ -1,154 +1,209 @@
-# 🚀 Deployment Guide - Conductor Voice Agent
+# 🚀 Deployment Guide – Conductor Voice Agent on Google Cloud Run
 
-## What You Have Now
-
-✅ Complete voice-enabled web application  
-✅ Mobile-responsive interface with beautiful UI  
-✅ Full backend API with Whisper + TTS  
-✅ Deployment configuration for Render.com  
-✅ PWA support (installable on phone)  
+This guide covers deploying the Conductor Voice Agent to **Google Cloud Run** using
+Docker, with proper secret handling via Secret Manager and CI/CD via Cloud Build.
 
 ---
 
-## 🎯 Quick Deploy to Render.com
+## Prerequisites
 
-### Step 1: Create GitHub Repository
+| Tool | Purpose |
+|------|---------|
+| [gcloud CLI](https://cloud.google.com/sdk/docs/install) | Interact with Google Cloud |
+| [Docker](https://docs.docker.com/get-docker/) | Build images locally |
+| A Google Cloud project with billing enabled | Hosting |
 
-1. Go to [github.com](https://github.com) and sign in  
-2. Click **"New repository"**  
-3. Name it `conductor-voice-agent`  
-4. Make it **Private** (your API key is involved)  
-5. Click **"Create repository"**  
-
-### Step 2: Push Code to GitHub
-
-Open PowerShell in your conductor_agent folder:
-
-```powershell
-cd "c:\Users\jjc29\antigravity agent 1\conductor_agent"
-
-# Initialize git
-git init
-git add .
-git commit -m "Initial commit - Conductor Voice Agent"
-
-# Connect to GitHub (replace YOUR_USERNAME)
-git remote add origin https://github.com/YOUR_USERNAME/conductor-voice-agent.git
-git branch -M main
-git push -u origin main
+```bash
+# Authenticate and set your project
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
 ```
 
-### Step 3: Deploy on Render
+---
 
-1. Go to [render.com](https://render.com)  
-2. Click **"Sign Up"** → Sign in with GitHub  
-3. Click **"New +"** → **"Web Service"**  
-4. Connect your `conductor-voice-agent` repository  
-5. Render will auto-detect the `render.yaml` file  
-6. Click **"Apply"**
+## 1 – Artifact Registry Setup
 
-### Step 4: Add Environment Variables
+Cloud Run pulls images from Artifact Registry (the modern replacement for Container Registry).
 
-In Render dashboard:
-1. Go to your service → **"Environment"**  
-2. Add these variables:
-   - `OPENAI_API_KEY` = `your-actual-api-key`
-   - `PYTHON_VERSION` = `3.11.0`
-3. Click **"Save Changes"**
+```bash
+# Enable the Artifact Registry API (one-time)
+gcloud services enable artifactregistry.googleapis.com
 
-### Step 5: Deploy!
+# Create a Docker repository in your chosen region
+gcloud artifacts repositories create conductor-agent \
+  --repository-format=docker \
+  --location=us-central1 \
+  --description="Conductor Voice Agent images"
 
-1. Click **"Manual Deploy"** → **"Deploy latest commit"**  
-2. Wait 5-10 minutes for build  
-3. You'll get a URL like: `https://conductor-voice-agent.onrender.com`
+# Allow the gcloud Docker credential helper to push to Artifact Registry
+gcloud auth configure-docker us-central1-docker.pkg.dev
+```
 
 ---
 
-## 📱 Using Your Voice App
+## 2 – Store Secrets in Secret Manager
 
-### On Your Phone:
+Never bake API keys into your image or pass them as plain env vars in Cloud Run.
 
-1. Open the Render URL in your phone's browser  
-2. Grant microphone permission when prompted  
-3. Tap the big **🎤 button**  
-4. Start talking!  
-5. Get voice responses back  
+```bash
+# Enable the Secret Manager API (one-time)
+gcloud services enable secretmanager.googleapis.com
 
-### Install as App (PWA):
+# Create the secret (interactive – paste your key when prompted)
+echo -n "sk-YOUR_OPENAI_KEY" | \
+  gcloud secrets create OPENAI_API_KEY \
+    --data-file=- \
+    --replication-policy=automatic
 
-#### iPhone (Safari):
-1. Open the URL in Safari  
-2. Tap the **Share** button  
-3. Tap **"Add to Home Screen"**  
-4. Tap **"Add"**  
-
-#### Android (Chrome):
-1. Open the URL in Chrome  
-2. Tap the **⋮ menu**  
-3. Tap **"Add to Home screen"**  
-4. Tap **"Add"**  
-
-Now you have an app icon on your home screen! 🎉
+# Add a new version later:
+# echo -n "sk-NEW_KEY" | gcloud secrets versions add OPENAI_API_KEY --data-file=-
+```
 
 ---
 
-## ⚙️ Settings
+## 3 – IAM Roles
 
-### Change Voice:
+### Cloud Run service account
 
-1. Open settings in the web app (⚙️ icon)  
-2. Select voice:
-   - **Nova**: Clear female (default, recommended)
-   - **Alloy**: Neutral  
-   - **Echo**: Male  
-   - **Onyx**: Deep male  
-   - **Shimmer**: Soft female  
+Cloud Run uses a service account to access other GCP resources.  
+Grant it permission to read the secret you created:
+
+```bash
+# Identify the Cloud Run service account (default is the Compute default SA)
+PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')
+SA="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+
+# Allow it to read secret values
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:$SA" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### Cloud Build service account
+
+Cloud Build needs to push images to Artifact Registry and deploy to Cloud Run:
+
+```bash
+BUILD_SA="$PROJECT_NUMBER@cloudbuild.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:$BUILD_SA" \
+  --role="roles/run.admin"
+
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:$BUILD_SA" \
+  --role="roles/artifactregistry.writer"
+
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:$BUILD_SA" \
+  --role="roles/iam.serviceAccountUser"
+```
+
+### Developer Connect (optional – only for GitHub-connected triggers)
+
+If you connect Cloud Build to GitHub via **Developer Connect**, you must grant the
+Cloud Build service account the token-accessor role so it can clone your repository:
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:$BUILD_SA" \
+  --role="roles/developerconnect.readTokenAccessor"
+```
 
 ---
 
-## 🔧 Troubleshooting
+## 4 – Deploy from Local Machine
 
-### "Microphone access denied"
-- Go to browser settings → Permissions → Allow microphone for this site
+```bash
+PROJECT_ID=YOUR_PROJECT_ID
+REGION=us-central1
+IMAGE=us-central1-docker.pkg.dev/$PROJECT_ID/conductor-agent/conductor-agent
 
-### "API error"
-- Check that `OPENAI_API_KEY` is set correctly in Render dashboard
-- Make sure you have OpenAI API credits
+# Build and push
+docker build -t $IMAGE .
+docker push $IMAGE
 
-### "No response"
-- Check Render logs: Dashboard → Logs  
-- Make sure the ingestion completed (vector database has data)
+# Deploy to Cloud Run (PORT is injected automatically; secret is mounted as env var)
+gcloud run deploy conductor-agent \
+  --image=$IMAGE \
+  --region=$REGION \
+  --platform=managed \
+  --allow-unauthenticated \
+  --set-secrets="OPENAI_API_KEY=OPENAI_API_KEY:latest" \
+  --set-env-vars="LOG_LEVEL=INFO"
+```
 
-### App won't install
-- Use Safari on iPhone or Chrome on Android  
-- Some browsers don't support PWA installation
-
----
-
-## 💰 Costs
-
-### Render Hosting:
-- **Free tier**: Free! (sleeps after 15min inactivity)  
-- **Paid tier**: $7/month (always on, faster)  
-
-### OpenAI API:
-- **Whisper**: ~$0.01 per conversation  
-- **TTS**: ~$0.02 per response  
-- **GPT-4o-mini**: ~$0.001 per query  
-
-**Total**: ~$15-30/month for moderate use
+Cloud Run injects the `PORT` environment variable automatically; the Dockerfile and
+Gunicorn start command already honour it (default **8080**).
 
 ---
 
-## 🎊 You're Done!
+## 5 – Deploy via Cloud Build (CI/CD)
 
-You now have:
-- ✅ Voice AI accessible from your phone  
-- ✅ Remembers all your conversations  
-- ✅ Works anywhere with internet  
-- ✅ Professional UI  
-- ✅ Installable as an app  
+The repository includes a `cloudbuild.yaml` file that builds the Docker image, pushes
+it to Artifact Registry, and deploys the new revision to Cloud Run.
 
-**Your conductor agent is live! 🚀**
+```bash
+# Enable Cloud Build and Cloud Run APIs (one-time)
+gcloud services enable cloudbuild.googleapis.com run.googleapis.com
 
-Need help? Check the Render logs or update your OpenAI API key in the dashboard.
+# Trigger a manual build (substitute your values)
+gcloud builds submit . \
+  --config=cloudbuild.yaml \
+  --substitutions=_REGION=us-central1,_SERVICE=conductor-agent
+```
+
+To run builds automatically on every push to `main`, create a Cloud Build trigger in
+the console or via:
+
+```bash
+gcloud builds triggers create github \
+  --repo-name=conductor-agent \
+  --repo-owner=YOUR_GITHUB_USER \
+  --branch-pattern="^main$" \
+  --build-config=cloudbuild.yaml \
+  --substitutions='_REGION=us-central1,_SERVICE=conductor-agent'
+```
+
+---
+
+## 6 – Environment Variables Reference
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | **Yes** | OpenAI API key (use Secret Manager on Cloud Run) |
+| `PORT` | No | HTTP port (Cloud Run injects this; default **8080**) |
+| `CONDUCTOR_MODEL` | No | LLM model name (default `gpt-4o-mini`) |
+| `LOG_LEVEL` | No | Logging verbosity (default `INFO`) |
+| `CHROMA_PERSIST_DIR` | No | ChromaDB path (not used in cloud/minimal mode) |
+
+See `.env.example` for a full list of configurable variables.
+
+---
+
+## 7 – Local Development with Docker
+
+```bash
+# Build
+docker build -t conductor-agent .
+
+# Run (pass your key as an env var)
+docker run -p 8080:8080 \
+  -e OPENAI_API_KEY=sk-your-key \
+  conductor-agent
+
+# Open in browser
+open http://localhost:8080
+```
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `Missing required environment variable(s): OPENAI_API_KEY` | Set the secret in Secret Manager and attach it with `--set-secrets` |
+| `permission denied` on secret access | Grant `roles/secretmanager.secretAccessor` to the Cloud Run SA |
+| `403` on Cloud Build GitHub trigger | Grant `roles/developerconnect.readTokenAccessor` to the Cloud Build SA |
+| Container exits immediately | Check Cloud Run logs: `gcloud run services logs read conductor-agent` |
+

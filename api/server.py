@@ -23,6 +23,24 @@ from voice.voice_processor import get_voice_processor
 from utils.logger import logger
 from config.settings import settings
 
+# ---------------------------------------------------------------------------
+# Startup validation – fail fast with a clear message if required env vars
+# are missing so misconfigured deployments are immediately obvious.
+# ---------------------------------------------------------------------------
+def _validate_environment() -> None:
+    """Raise RuntimeError with a clear message if required env vars are absent."""
+    missing = []
+    if not settings.openai_api_key:
+        missing.append("OPENAI_API_KEY")
+    if missing:
+        raise RuntimeError(
+            f"Missing required environment variable(s): {', '.join(missing)}. "
+            "Set them via your shell, a .env file, or Google Cloud Secret Manager "
+            "before starting the server."
+        )
+
+_validate_environment()
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Conductor Voice Agent",
@@ -48,7 +66,8 @@ def get_conductor():
     global conductor
     if conductor is None:
         # Use minimal conductor in cloud environments (no ChromaDB)
-        is_cloud = os.getenv("RENDER") or os.getenv("RAILWAY") or os.getenv("HEROKU")
+        # Cloud Run sets K_SERVICE; also support legacy Render/Railway/Heroku flags
+        is_cloud = any(os.getenv(v) for v in ("K_SERVICE", "RENDER", "RAILWAY", "HEROKU"))
         
         try:
             if is_cloud:

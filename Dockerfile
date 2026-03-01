@@ -21,8 +21,11 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p temp_audio logs data/chroma_db
 
-# Expose port
-EXPOSE 8000
+# Default port (Cloud Run injects PORT at runtime)
+ENV PORT=8080
 
-# Run with Gunicorn
-CMD ["gunicorn", "api.server:app", "--bind", "0.0.0.0:8000", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "--timeout", "120"]
+# Expose port
+EXPOSE 8080
+
+# Run with Gunicorn (shell form to allow $PORT substitution)
+CMD gunicorn api.server:app --bind "0.0.0.0:${PORT}" --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120
