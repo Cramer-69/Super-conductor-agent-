@@ -160,6 +160,55 @@ conductor_agent/
 └── .env.example        # Environment template
 ```
 
+## 🔑 Where Does the Key Go?
+
+### 1 · Local run (plain Python)
+
+Create a `.env` file from the template — **never commit this file**:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set your key:
+
+```env
+OPENAI_API_KEY=sk-...your-key-here...
+```
+
+The app reads this file automatically on startup. If the key is missing you will see a clear error message telling you exactly what to do.
+
+### 2 · Docker (local)
+
+Do **not** bake the key into the image. Pass it via `--env-file`:
+
+```bash
+docker build -t conductor-agent .
+docker run --rm --env-file .env -p 8080:8080 conductor-agent
+```
+
+### 3 · Google Cloud Run
+
+Store the key in [Secret Manager](https://cloud.google.com/secret-manager) and inject it as an environment variable — the key never touches your source code or container image:
+
+```bash
+# 1. Create the secret (one time)
+echo -n "sk-...your-key-here..." | \
+  gcloud secrets create openai-api-key --data-file=-
+
+# 2. Deploy, mapping the secret to OPENAI_API_KEY
+gcloud run deploy conductor-agent \
+  --image gcr.io/PROJECT_ID/conductor-agent \
+  --set-secrets OPENAI_API_KEY=openai-api-key:latest \
+  --port 8080
+```
+
+Cloud Run injects `PORT` automatically; the container respects it.
+
+> **Render.com** – `render.yaml` is present for legacy reference but is no longer actively maintained. Use Cloud Run instead.
+
+---
+
 ## 🔧 Configuration
 
 All settings can be configured in `.env`:

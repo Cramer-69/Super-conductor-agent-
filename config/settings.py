@@ -82,6 +82,26 @@ class Settings(BaseSettings):
             self.google_api_key
         ])
 
+    def require_openai_api_key(self) -> str:
+        """Return the OpenAI API key or raise a clear error if it is not set.
+
+        Call this at application startup so users get an actionable message
+        instead of a cryptic failure deep inside the request handler.
+
+        Raises:
+            RuntimeError: if OPENAI_API_KEY is not set in the environment or .env.
+        """
+        if not self.openai_api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is not set.\n"
+                "  • Local run : add OPENAI_API_KEY=sk-... to your .env file (see .env.example).\n"
+                "  • Docker    : pass --env-file .env to 'docker run'.\n"
+                "  • Cloud Run : store the key in Secret Manager and add\n"
+                "                --set-secrets OPENAI_API_KEY=openai-api-key:latest\n"
+                "                to your 'gcloud run deploy' command."
+            )
+        return self.openai_api_key
+
 
 # Global settings instance
 settings = Settings()

@@ -1,3 +1,6 @@
+# DEPRECATED: This Render config is no longer actively maintained.
+# The recommended deployment target is Google Cloud Run.
+# See README.md → "Where does the key go?" for Cloud Run instructions.
 services:
   - type: web
     name: conductor-voice-agent
