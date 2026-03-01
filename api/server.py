@@ -23,6 +23,34 @@ from voice.voice_processor import get_voice_processor
 from utils.logger import logger
 from config.settings import settings
 
+# ---------------------------------------------------------------------------
+# Startup validation – fail fast with a clear message if required keys are absent
+# ---------------------------------------------------------------------------
+def _validate_env() -> None:
+    """Exit with a descriptive error if no LLM API key is configured."""
+    api_keys = {
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+        "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
+        "GOOGLE_API_KEY": os.getenv("GOOGLE_API_KEY"),
+    }
+    if not any(api_keys.values()):
+        print(
+            "\n❌  ERROR: No LLM API key found.\n"
+            "   Set at least one of the following environment variables before starting:\n"
+            "     OPENAI_API_KEY    – OpenAI / GPT models (recommended)\n"
+            "     ANTHROPIC_API_KEY – Anthropic / Claude models\n"
+            "     GOOGLE_API_KEY    – Google / Gemini models\n\n"
+            "   Local:      export OPENAI_API_KEY=sk-...\n"
+            "   Docker:     docker run -e OPENAI_API_KEY=sk-... ...\n"
+            "   Cloud Run:  gcloud run deploy --set-env-vars OPENAI_API_KEY=sk-... ... (dev/testing only – use Secret Manager in production)\n"
+            "               (or use Secret Manager – see DEPLOYMENT.md)\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+_validate_env()
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Conductor Voice Agent",
@@ -48,7 +76,7 @@ def get_conductor():
     global conductor
     if conductor is None:
         # Use minimal conductor in cloud environments (no ChromaDB)
-        is_cloud = os.getenv("RENDER") or os.getenv("RAILWAY") or os.getenv("HEROKU")
+        is_cloud = os.getenv("RENDER") or os.getenv("RAILWAY") or os.getenv("HEROKU") or os.getenv("K_SERVICE")
         
         try:
             if is_cloud:

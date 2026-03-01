@@ -1,3 +1,6 @@
+# ⚠️  DEPRECATED – This file is kept for historical reference only.
+# The project has moved to Google Cloud Run.  See DEPLOYMENT.md for current instructions.
+#
 services:
   - type: web
     name: conductor-voice-agent

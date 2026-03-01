@@ -21,8 +21,11 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p temp_audio logs data/chroma_db
 
-# Expose port
-EXPOSE 8000
+# Default port – Cloud Run injects $PORT at runtime; override here for local docker run
+ENV PORT=8080
 
-# Run with Gunicorn
-CMD ["gunicorn", "api.server:app", "--bind", "0.0.0.0:8000", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "--timeout", "120"]
+# Expose default port (informational; Cloud Run uses $PORT at runtime)
+EXPOSE 8080
+
+# Run with Gunicorn, honouring $PORT so Cloud Run and local docker run both work
+CMD ["sh", "-c", "exec gunicorn api.server:app --bind 0.0.0.0:${PORT} --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120"]

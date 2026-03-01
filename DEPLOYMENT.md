@@ -1,154 +1,165 @@
-# 🚀 Deployment Guide - Conductor Voice Agent
+# 🚀 Deployment Guide – Conductor Voice Agent
 
-## What You Have Now
-
-✅ Complete voice-enabled web application  
-✅ Mobile-responsive interface with beautiful UI  
-✅ Full backend API with Whisper + TTS  
-✅ Deployment configuration for Render.com  
-✅ PWA support (installable on phone)  
+> **Platform change:** This project has moved from Render.com to **Google Cloud Run**.  
+> The `render.yaml` file is kept for reference only and is **deprecated**.
 
 ---
 
-## 🎯 Quick Deploy to Render.com
+## Prerequisites
 
-### Step 1: Create GitHub Repository
+| Tool | Install |
+|------|---------|
+| Docker | <https://docs.docker.com/get-docker/> |
+| Google Cloud CLI (`gcloud`) | <https://cloud.google.com/sdk/docs/install> |
+| A GCP project with billing enabled | <https://console.cloud.google.com/> |
 
-1. Go to [github.com](https://github.com) and sign in  
-2. Click **"New repository"**  
-3. Name it `conductor-voice-agent`  
-4. Make it **Private** (your API key is involved)  
-5. Click **"Create repository"**  
+```bash
+# Authenticate and set your project
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID   # replace with your actual project ID
 
-### Step 2: Push Code to GitHub
-
-Open PowerShell in your conductor_agent folder:
-
-```powershell
-cd "c:\Users\jjc29\antigravity agent 1\conductor_agent"
-
-# Initialize git
-git init
-git add .
-git commit -m "Initial commit - Conductor Voice Agent"
-
-# Connect to GitHub (replace YOUR_USERNAME)
-git remote add origin https://github.com/YOUR_USERNAME/conductor-voice-agent.git
-git branch -M main
-git push -u origin main
+# Enable required APIs
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
 ```
 
-### Step 3: Deploy on Render
+---
 
-1. Go to [render.com](https://render.com)  
-2. Click **"Sign Up"** → Sign in with GitHub  
-3. Click **"New +"** → **"Web Service"**  
-4. Connect your `conductor-voice-agent` repository  
-5. Render will auto-detect the `render.yaml` file  
-6. Click **"Apply"**
+## 1 – Local Docker Test
 
-### Step 4: Add Environment Variables
+Verify the image builds and runs before deploying to the cloud.
 
-In Render dashboard:
-1. Go to your service → **"Environment"**  
-2. Add these variables:
-   - `OPENAI_API_KEY` = `your-actual-api-key`
-   - `PYTHON_VERSION` = `3.11.0`
-3. Click **"Save Changes"**
+```bash
+# Build
+docker build -t conductor-agent .
 
-### Step 5: Deploy!
+# Run locally (replace with your real key)
+docker run --rm \
+  -e OPENAI_API_KEY=sk-... \
+  -p 8080:8080 \
+  conductor-agent
 
-1. Click **"Manual Deploy"** → **"Deploy latest commit"**  
-2. Wait 5-10 minutes for build  
-3. You'll get a URL like: `https://conductor-voice-agent.onrender.com`
+# Smoke-test
+curl http://localhost:8080/health
+```
+
+Expected response:
+```json
+{"status":"healthy","service":"conductor-voice-agent","version":"1.0.0"}
+```
 
 ---
 
-## 📱 Using Your Voice App
+## 2 – Store the API Key in Secret Manager (recommended)
 
-### On Your Phone:
+Never pass secrets as plain environment variables in production.
 
-1. Open the Render URL in your phone's browser  
-2. Grant microphone permission when prompted  
-3. Tap the big **🎤 button**  
-4. Start talking!  
-5. Get voice responses back  
+```bash
+# Create the secret (paste your key when prompted)
+echo -n "sk-YOUR_REAL_KEY" | \
+  gcloud secrets create OPENAI_API_KEY \
+    --data-file=- \
+    --replication-policy=automatic
 
-### Install as App (PWA):
-
-#### iPhone (Safari):
-1. Open the URL in Safari  
-2. Tap the **Share** button  
-3. Tap **"Add to Home Screen"**  
-4. Tap **"Add"**  
-
-#### Android (Chrome):
-1. Open the URL in Chrome  
-2. Tap the **⋮ menu**  
-3. Tap **"Add to Home screen"**  
-4. Tap **"Add"**  
-
-Now you have an app icon on your home screen! 🎉
+# Grant Cloud Run's service account access
+PROJECT_ID=$(gcloud config get-value project)   # or set: PROJECT_ID=your-project-id
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+gcloud secrets add-iam-policy-binding OPENAI_API_KEY \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
 
 ---
 
-## ⚙️ Settings
+## 3 – Build & Push the Container Image
 
-### Change Voice:
+```bash
+# Create an Artifact Registry repository (one-time)
+gcloud artifacts repositories create conductor-agent \
+  --repository-format=docker \
+  --location=us-central1
 
-1. Open settings in the web app (⚙️ icon)  
-2. Select voice:
-   - **Nova**: Clear female (default, recommended)
-   - **Alloy**: Neutral  
-   - **Echo**: Male  
-   - **Onyx**: Deep male  
-   - **Shimmer**: Soft female  
+# Build and push
+PROJECT_ID=$(gcloud config get-value project)   # or set: PROJECT_ID=your-project-id
+IMAGE=us-central1-docker.pkg.dev/$PROJECT_ID/conductor-agent/conductor-agent:latest
+
+gcloud builds submit --tag "$IMAGE"
+```
+
+---
+
+## 4 – Deploy to Cloud Run
+
+### Option A – With Secret Manager (recommended)
+
+```bash
+gcloud run deploy conductor-agent \
+  --image "$IMAGE" \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 8080 \
+  --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest" \
+  --set-env-vars "LOG_LEVEL=INFO,CHROMA_PERSIST_DIR=/app/data/chroma_db"
+```
+
+### Option B – Plain environment variable (dev/testing only)
+
+```bash
+gcloud run deploy conductor-agent \
+  --image "$IMAGE" \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 8080 \
+  --set-env-vars "OPENAI_API_KEY=sk-...,LOG_LEVEL=INFO"
+```
+
+After deployment you will receive a service URL such as  
+`https://conductor-agent-xxxx-uc.a.run.app`
+
+---
+
+## 5 – Verify the Deployment
+
+```bash
+curl https://conductor-agent-xxxx-uc.a.run.app/health
+```
+
+---
+
+## Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENAI_API_KEY` | ✅ (or one of the below) | — | OpenAI API key |
+| `ANTHROPIC_API_KEY` | optional | — | Anthropic / Claude API key |
+| `GOOGLE_API_KEY` | optional | — | Google / Gemini API key |
+| `PORT` | no | `8080` | Port the server listens on (Cloud Run sets this automatically) |
+| `CONDUCTOR_MODEL` | no | `gpt-4o-mini` | LLM model name |
+| `CHROMA_PERSIST_DIR` | no | `./data/chroma_db` | ChromaDB storage path |
+| `LOG_LEVEL` | no | `INFO` | Logging verbosity |
+
+> **Startup check:** The server validates that at least one API key is present on  
+> startup and exits immediately with a descriptive error if none is found.
+
+---
+
+## ⚠️ Security Notes
+
+- **Never commit API keys** to git.  Copy `.env.example` → `.env` for local use;  
+  `.env` is listed in `.gitignore` and will not be committed.
+- If an API key was accidentally committed or pasted in public, **rotate it immediately**:  
+  <https://platform.openai.com/api-keys>
+- Use **Secret Manager** (Option A above) for all production deployments.
 
 ---
 
 ## 🔧 Troubleshooting
 
-### "Microphone access denied"
-- Go to browser settings → Permissions → Allow microphone for this site
+| Symptom | Fix |
+|---------|-----|
+| `ERROR: No LLM API key found` at startup | Set `OPENAI_API_KEY` (or another supported key) |
+| `403 PERMISSION_DENIED` from Secret Manager | Run the `add-iam-policy-binding` command in Step 2 |
+| Container keeps restarting | Check Cloud Run logs: `gcloud run services logs read conductor-agent` |
+| Port mismatch | Ensure `--port 8080` matches `ENV PORT=8080` in the Dockerfile |
 
-### "API error"
-- Check that `OPENAI_API_KEY` is set correctly in Render dashboard
-- Make sure you have OpenAI API credits
-
-### "No response"
-- Check Render logs: Dashboard → Logs  
-- Make sure the ingestion completed (vector database has data)
-
-### App won't install
-- Use Safari on iPhone or Chrome on Android  
-- Some browsers don't support PWA installation
-
----
-
-## 💰 Costs
-
-### Render Hosting:
-- **Free tier**: Free! (sleeps after 15min inactivity)  
-- **Paid tier**: $7/month (always on, faster)  
-
-### OpenAI API:
-- **Whisper**: ~$0.01 per conversation  
-- **TTS**: ~$0.02 per response  
-- **GPT-4o-mini**: ~$0.001 per query  
-
-**Total**: ~$15-30/month for moderate use
-
----
-
-## 🎊 You're Done!
-
-You now have:
-- ✅ Voice AI accessible from your phone  
-- ✅ Remembers all your conversations  
-- ✅ Works anywhere with internet  
-- ✅ Professional UI  
-- ✅ Installable as an app  
-
-**Your conductor agent is live! 🚀**
-
-Need help? Check the Render logs or update your OpenAI API key in the dashboard.
