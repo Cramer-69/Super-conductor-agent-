@@ -202,6 +202,13 @@ ANTIGRAVITY_BRAIN_DIR=C:/Users/jjc29/.gemini/antigravity/brain
 4. **Retrieval**: Hybrid search with re-ranking by recency and relevance
 5. **Context**: Retrieved conversations provide context for queries
 
+## ☁️ Cloud Deployment
+
+For deploying to **Google Cloud Run** (including required IAM permissions for Cloud Build
+and Developer Connect), see [docs/cloud-run.md](docs/cloud-run.md).
+
+For deploying to **Render.com**, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## 🛠️ Troubleshooting
 
 ### "No relevant conversations found"
