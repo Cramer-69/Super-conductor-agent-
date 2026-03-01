@@ -39,6 +39,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+async def startup_event():
+    """Log configuration status on startup so problems are immediately visible."""
+    api_keys = {
+        "OPENAI_API_KEY": settings.openai_api_key,
+        "GOOGLE_API_KEY": settings.google_api_key,
+        "XAI_API_KEY": settings.xai_api_key,
+        "ANTHROPIC_API_KEY": settings.anthropic_api_key,
+    }
+    configured = [name for name, val in api_keys.items() if val]
+
+    if configured:
+        logger.info(f"API keys configured: {', '.join(configured)}")
+    else:
+        logger.warning(
+            "No LLM API keys found. The agent will run in minimal mode and cannot answer queries. "
+            "Set at least one of: OPENAI_API_KEY, GOOGLE_API_KEY, XAI_API_KEY, ANTHROPIC_API_KEY "
+            "(via Render dashboard Environment tab, or in a local .env file)."
+        )
+
+    port = int(os.getenv("PORT", settings.api_port))
+    logger.info(f"Conductor Voice Agent started on port {port}")
+
+
 # Initialize services (lazy initialization to avoid startup crashes)
 conductor = None
 voice_processor = None
@@ -125,10 +150,13 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    api_keys_configured = settings.validate_api_keys()
     return {
         "status": "healthy",
         "service": "conductor-voice-agent",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "api_keys_configured": api_keys_configured,
+        "mode": "full" if api_keys_configured else "minimal",
     }
 
 

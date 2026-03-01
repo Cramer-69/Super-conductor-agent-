@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # Data Paths
     raw_data_dir: str = "./data/raw"
     processed_data_dir: str = "./data/processed"
-    antigravity_brain_dir: str = "C:/Users/jjc29/.gemini/antigravity/brain"
+    antigravity_brain_dir: str = ""  # Set via ANTIGRAVITY_BRAIN_DIR env var (e.g. ~/.gemini/antigravity/brain)
     
     # Logging
     log_level: str = "INFO"

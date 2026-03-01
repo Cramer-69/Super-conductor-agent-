@@ -3,27 +3,47 @@
 ## 🚀 3-Minute Setup
 
 ### 1. Configure Your API Key
-```powershell
-cd "c:\Users\jjc29\antigravity agent 1\conductor_agent"
-copy .env.example .env
-notepad .env
+
+```bash
+cp .env.example .env   # Linux/macOS
+# or: copy .env.example .env  (Windows)
 ```
 
-Add your OpenAI API key:
+Open `.env` in your editor and add your API key:
+
 ```
 OPENAI_API_KEY=sk-your-actual-key-here
 ```
 
-### 2. Ingest Your Antigravity Conversations
-```powershell
+Any of `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `XAI_API_KEY`, or `ANTHROPIC_API_KEY` will work.
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. (Optional) Ingest Your Conversations
+
+```bash
 python ingest.py
 ```
 
 Wait for processing... ☕ (first run takes ~5-10 minutes)
 
-### 3. Start Chatting!
-```powershell
+### 4. Start Chatting!
+
+**CLI:**
+
+```bash
 python -m cli.interactive
+```
+
+**API server:**
+
+```bash
+uvicorn api.server:app --reload
+# visit http://localhost:8000
 ```
 
 ## 📝 Example Commands
@@ -55,6 +75,9 @@ You: /exit
 1. Export from Grok settings (ZIP format)
 2. Run: `python ingest.py --grok "path/to/grok_export.zip"`
 
+### Antigravity
+Set `ANTIGRAVITY_BRAIN_DIR` in your `.env` to the brain folder path, then run `python ingest.py`.
+
 ## 🔧 Troubleshooting
 
 **No results found?**
@@ -62,8 +85,8 @@ You: /exit
 - Make sure you ran `python ingest.py` first
 
 **API errors?**
-- Check your `.env` file has the correct `OPENAI_API_KEY`
-- Verify the key starts with `sk-`
+- Check your `.env` file has a valid API key
+- OpenAI keys start with `sk-`
 
 **Installation issues?**
 - Ensure Python 3.9+ is installed
@@ -71,8 +94,9 @@ You: /exit
 
 ## 📖 Full Documentation
 
-See [README.md](file:///c:/Users/jjc29/antigravity%20agent%201/conductor_agent/README.md) for complete documentation.
+See [README.md](README.md) for complete documentation including Render deployment.
 
 ## ✨ You're All Set!
 
 Your conductor agent is ready to supercharge your AI workflow! 🎉
+

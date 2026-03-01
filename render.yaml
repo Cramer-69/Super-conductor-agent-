@@ -6,8 +6,18 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn api.server:app --bind 0.0.0.0:$PORT --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120
     envVars:
+      # ── Required: set at least ONE of the API keys below ──────────────────
       - key: OPENAI_API_KEY
-        sync: false
+        sync: false          # paste your existing key in the Render dashboard
+      # - key: GOOGLE_API_KEY
+      #   sync: false        # alternative: Google Gemini key
+      # - key: XAI_API_KEY
+      #   sync: false        # alternative: xAI / Grok key
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false        # optional: Anthropic Claude key
+      # ── Optional ──────────────────────────────────────────────────────────
+      # - key: ANTIGRAVITY_BRAIN_DIR
+      #   sync: false        # path to local Antigravity brain (not needed on Render)
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: CHROMA_PERSIST_DIR

@@ -11,49 +11,112 @@ A local-first AI system that aggregates conversations from **Grok**, **ChatGPT**
 - **Privacy First**: Runs 100% locally on your machine
 - **Rich CLI Interface**: Beautiful terminal interface with search and filtering
 
-## 🚀 Quick Start (Windows)
-
-**Double-click `Start_Super_Agent.bat` on your Desktop.**
-
-This will:
-
-1. Auto-configure the environment
-2. Install any missing dependencies (self-healing)
-3. Launch the Multi-AI Super Agent interface
-
 ---
 
-## 🤖 Supported Providers
+## 🖥️ Local Run
 
-- **Google Gemini** (Primary, Auto-configured)
-- **Grok / xAI** (Added via Desktop key)
-- **Perplexity** (Search enabled)
-- **OpenAI** (Fallback)
-
-## 🚀 Quick Start
-
-### 1. Install Dependencies
+### 1. Clone & Install
 
 ```bash
-cd conductor_agent
+git clone https://github.com/Cramer-69/conductor-agent.git
+cd conductor-agent
 pip install -r requirements.txt
 ```
 
 ### 2. Configure Environment
 
-Copy the example environment file and add your API keys:
+```bash
+cp .env.example .env   # Linux/macOS
+# or: copy .env.example .env  (Windows)
+```
+
+Edit `.env` and set **at least one** API key:
+
+| Variable | Provider | Get a key |
+|---|---|---|
+| `OPENAI_API_KEY` | OpenAI (GPT-4o-mini) | <https://platform.openai.com/api-keys> |
+| `GOOGLE_API_KEY` | Google Gemini | <https://aistudio.google.com/app/apikey> |
+| `XAI_API_KEY` | xAI / Grok | <https://console.x.ai/> |
+| `ANTHROPIC_API_KEY` | Anthropic Claude | <https://console.anthropic.com/> |
+
+> **Do you need a new key?** No — if you already have any of these keys, just paste it in. You only need one.
+
+### 3. (Optional) Ingest Your Conversation Data
 
 ```bash
-copy .env.example .env
+python ingest.py
 ```
 
-Edit `.env` and add your OpenAI API key:
+### 4. Start the API Server
 
-```
-OPENAI_API_KEY=sk-your-key-here
+```bash
+uvicorn api.server:app --reload
+# visit http://localhost:8000
 ```
 
-### 3. Export Your Conversations
+Or start the CLI:
+
+```bash
+python -m cli.interactive
+```
+
+---
+
+## ☁️ Quick Deploy (Render)
+
+You can host the API server for free on [Render](https://render.com). You **do not** need a new API key — use your existing one.
+
+### Steps
+
+1. **Fork / push this repo to GitHub** (must be public or Render must have access).
+2. Go to [render.com](https://render.com) → **New + → Web Service**.
+3. Connect your GitHub repository. Render will detect `render.yaml` automatically.
+4. In the **Environment** tab add **at least one** of these keys:
+
+   | Key | Value |
+   |---|---|
+   | `OPENAI_API_KEY` | `sk-…` your existing key |
+   | `GOOGLE_API_KEY` | your existing key |
+   | `XAI_API_KEY` | your existing key |
+
+5. Click **Deploy**. Build takes ~5 minutes.
+6. Your service URL will be `https://<name>.onrender.com`. Test it:
+
+   ```bash
+   curl https://<name>.onrender.com/health
+   # {"status":"healthy","api_keys_configured":true,"mode":"minimal"}
+   ```
+
+   Post a chat message:
+
+   ```bash
+   curl -X POST https://<name>.onrender.com/api/chat \
+     -H "Content-Type: application/json" \
+     -d '{"query": "Hello!"}'
+   ```
+
+> **Tip:** The free Render tier sleeps after 15 minutes of inactivity. Upgrade to a paid plan ($7/month) for always-on hosting.
+
+### Common Render Problems
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Build fails | Missing `PYTHON_VERSION` | Already set in `render.yaml` (3.11.0) |
+| 502 on startup | Wrong port binding | Fixed — `render.yaml` uses `$PORT` |
+| "minimal mode" response | No API key set | Add key in Render **Environment** tab |
+| Logs show "No LLM API keys" | Key not saved | Re-save in Render dashboard and redeploy |
+
+---
+
+## 🤖 Supported Providers
+
+- **Google Gemini** (`GOOGLE_API_KEY`)
+- **Grok / xAI** (`XAI_API_KEY`)
+- **OpenAI** (`OPENAI_API_KEY`) — default
+- **Anthropic Claude** (`ANTHROPIC_API_KEY`)
+
+
+### Export Your Conversations (Optional)
 
 #### ChatGPT
 
@@ -78,28 +141,22 @@ OPENAI_API_KEY=sk-your-key-here
 
 #### Antigravity
 
-- Conversations are automatically available at:
+- Point `ANTIGRAVITY_BRAIN_DIR` in your `.env` to the brain folder (e.g. `~/.gemini/antigravity/brain`).
 
-  ```
-  C:\Users\<username>\.gemini\antigravity\brain
-  ```
-
-### 4. Ingest Your Data
-
-Run the ingestion script to process and index your conversations:
+### Ingest Your Data
 
 ```bash
 # Ingest all platforms
-python ingest.py --chatgpt "path/to/conversations.json" --gemini "path/to/gemini_export" --grok "path/to/grok_export.zip" --antigravity "C:/Users/jjc29/.gemini/antigravity/brain"
+python ingest.py --chatgpt "path/to/conversations.json" --gemini "path/to/gemini_export_folder/" --grok "path/to/grok_export.zip"
 
-# Or just Antigravity (default)
+# Or just Antigravity (requires ANTIGRAVITY_BRAIN_DIR set in .env)
 python ingest.py
 
 # Reset database and re-ingest
-python ingest.py --reset --antigravity "C:/Users/jjc29/.gemini/antigravity/brain"
+python ingest.py --reset
 ```
 
-### 5. Start the CLI
+### Start the CLI
 
 ```bash
 python -m cli.interactive
