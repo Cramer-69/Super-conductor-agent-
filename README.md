@@ -233,6 +233,67 @@ ANTIGRAVITY_BRAIN_DIR=C:/Users/jjc29/.gemini/antigravity/brain
 - **No Telemetry**: ChromaDB telemetry disabled
 - **API Calls**: Only for embeddings (text only, no PII)
 
+## ☁️ Deploy to Google Cloud Run
+
+Follow these steps to host Conductor on **Google Cloud Run** with your OpenAI API key stored securely in **Secret Manager** (recommended over plain environment variables).
+
+---
+
+### Step 1 – Open Secret Manager and create a secret
+
+1. Go to **[Secret Manager](https://console.cloud.google.com/security/secret-manager)** in the Google Cloud Console.
+2. Click **"+ Create secret"** (top toolbar).
+3. **Name**: `OPENAI_API_KEY`
+4. **Secret value**: paste your `sk-…` key.
+5. Click **"Create secret"**.
+
+> To update the key later: open the secret → **"+ Add new version"** → paste the new value → **"Add new version"**.
+
+---
+
+### Step 2 – Deploy or update your Cloud Run service
+
+1. Go to **[Cloud Run](https://console.cloud.google.com/run)** in the Google Cloud Console.
+2. Click your service name (or **"Create service"** for a first deploy).
+3. Click **"Edit & deploy new revision"** (top toolbar).
+
+#### Attach the secret as an environment variable (recommended)
+
+4. Select the **"Variables & Secrets"** tab.
+5. Scroll to the **"Secrets"** section and click **"Reference a secret"**.
+6. Fill in:
+   - **Environment variable name**: `OPENAI_API_KEY`
+   - **Secret**: select `OPENAI_API_KEY` from the dropdown
+   - **Version**: `latest`
+7. Click **"Done"**, then **"Deploy"**.
+
+The container will receive the secret value as the `OPENAI_API_KEY` environment variable at runtime — the value is never stored in plain text in your Cloud Run configuration.
+
+#### Alternative: plain environment variable (not recommended)
+
+If you prefer not to use Secret Manager, you can add the key directly:
+
+4. Select the **"Variables & Secrets"** tab.
+5. In the **"Environment variables"** section click **"+ Add variable"**.
+6. Set **Name** = `OPENAI_API_KEY` and **Value** = your raw key.
+7. Click **"Deploy"**.
+
+> ⚠️ Plain environment variables are visible to anyone with `roles/run.developer` or higher and are stored unencrypted in the revision configuration. Prefer Secret Manager for any key with billing exposure.
+
+---
+
+### Step 3 – Find your service URL
+
+After the deployment finishes, the service URL is shown at the top of the service detail page:
+
+1. Go to **[Cloud Run](https://console.cloud.google.com/run)**.
+2. Click your service name.
+3. The URL is displayed under the service name — e.g. `https://conductor-agent-<hash>-uc.a.run.app`.
+
+You can also copy it from the **"Triggers"** tab on the same page.
+
+---
+
 ## 🚧 Future Enhancements
 
 - [x ] LangGraph conductor orchestration with specialized sub-agents
