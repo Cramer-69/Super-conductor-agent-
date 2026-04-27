@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     
     # API Server
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 8080
     debug: bool = False
     
     # Data Paths

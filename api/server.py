@@ -329,7 +329,7 @@ if static_dir.exists():
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     
     logger.info(f"Starting Conductor Voice Agent on port {port}")
     
