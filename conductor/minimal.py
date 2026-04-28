@@ -1,89 +1,52 @@
 """
-Minimal, dependency-light conductor fallback used in cloud or when no
-AI provider is configured. Calls whichever LLM provider has a key set
-(Google/Gemini, OpenAI, Anthropic, or xAI/Grok), without ChromaDB.
+Minimal, dependency-light conductor used in cloud or fallback mode.
+Calls whichever LLM provider has a key set (Google/Gemini, OpenAI,
+Anthropic, or xAI/Grok). No ChromaDB, no heavy local deps.
 """
 import os
-from pathlib import Path
 from typing import Dict, Any, Iterator
 from utils.logger import logger
 
-# ---------------------------------------------------------------------------
-# Optional SDK imports - use whichever is installed
-# ---------------------------------------------------------------------------
-try:
-    from openai import OpenAI as _OpenAI
-    _OPENAI_SDK = True
-except ImportError:
-    _OPENAI_SDK = False
 
-try:
-        import google.generativeai as _genai
-    _GOOGLE_SDK = True
-except (ImportError, Exception):
-    _GOOGLE_SDK = False
+def _provider_for_keys() -> tuple:
+    """Pick (provider, model) based on which env var is set."""
+    if os.getenv("GOOGLE_API_KEY"):
+        return "google", "gemini-1.5-flash"
+    if os.getenv("OPENAI_API_KEY", "").startswith("sk-"):
+        return "openai", "gpt-4o-mini"
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic", "claude-3-5-haiku-latest"
+    if os.getenv("XAI_API_KEY"):
+        return "xai", "grok-2-latest"
+    return "none", "minimal"
 
 
 class MinimalConductor:
-    """Small conductor that calls whichever LLM provider is configured."""
+    """Cloud-safe conductor. Calls whichever AI provider is configured."""
 
     def __init__(self):
-        skills_path = Path(__file__).resolve().parent.parent / "skills"
-        try:
-            self.skill_manager = SkillManager(skills_path)
-        except Exception:
-            self.skill_manager = None
-
         self.retriever = None
         self.current_skill = None
-
-        s = settings.settings if hasattr(settings, "settings") else settings
-        self.provider, self.model = self._select_provider(s)
-        self._settings = s
-
-        logger.info(f"Initialized MinimalConductor (provider={self.provider}, model={self.model})")
-
-    @staticmethod
-    def _select_provider(s):
-        if getattr(s, "google_api_key", None):
-            return "google", "gemini-1.5-flash"
-        if getattr(s, "openai_api_key", None):
-            return "openai", "gpt-4o-mini"
-        if getattr(s, "anthropic_api_key", None):
-            return "anthropic", "claude-3-5-haiku-latest"
-        if getattr(s, "xai_api_key", None):
-            return "xai", "grok-2-latest"
-        return "none", "minimal"
+        self.skill_manager = None
+        self.provider, self.model = _provider_for_keys()
+        logger.info(f"MinimalConductor initialized (provider={self.provider}, model={self.model})")
 
     def activate_skill(self, skill_name: str) -> bool:
-        if not self.skill_manager:
-            return False
-        skill = self.skill_manager.get_skill(skill_name)
-        if skill:
-            self.current_skill = skill
-            logger.info(f"Activated skill (minimal): {skill.name}")
-            return True
         return False
 
     def _system_prompt(self) -> str:
-        base = "You are Conductor, a helpful voice AI assistant. Be concise and conversational."
-        if self.current_skill:
-            try:
-                return f"{base}\n\nActive skill: {self.current_skill.name} - {self.current_skill.description}"
-            except Exception:
-                pass
-        return base
+        return "You are Conductor, a helpful voice AI assistant. Be concise and conversational."
 
     def _call_google(self, query: str) -> str:
         import google.generativeai as genai
-        genai.configure(api_key=self._settings.google_api_key)
+        genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
         model = genai.GenerativeModel(self.model, system_instruction=self._system_prompt())
         resp = model.generate_content(query)
         return resp.text or ""
 
     def _call_openai(self, query: str) -> str:
         from openai import OpenAI
-        client = OpenAI(api_key=self._settings.openai_api_key)
+        client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         resp = client.chat.completions.create(
             model=self.model,
             messages=[
@@ -95,7 +58,7 @@ class MinimalConductor:
 
     def _call_anthropic(self, query: str) -> str:
         import anthropic
-        client = anthropic.Anthropic(api_key=self._settings.anthropic_api_key)
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         resp = client.messages.create(
             model=self.model,
             max_tokens=1024,
@@ -106,7 +69,7 @@ class MinimalConductor:
 
     def _call_xai(self, query: str) -> str:
         from openai import OpenAI
-        client = OpenAI(api_key=self._settings.xai_api_key, base_url="https://api.x.ai/v1")
+        client = OpenAI(api_key=os.environ["XAI_API_KEY"], base_url="https://api.x.ai/v1")
         resp = client.chat.completions.create(
             model=self.model,
             messages=[
@@ -133,7 +96,7 @@ class MinimalConductor:
                 )
         except Exception as e:
             logger.error(f"MinimalConductor provider call failed ({self.provider}): {e}")
-            text = f"Sorry — the {self.provider} provider failed. Check the API key. ({type(e).__name__})"
+            text = f"Sorry — the {self.provider} provider failed: {type(e).__name__}: {e}"
 
         return {
             "response": text,
