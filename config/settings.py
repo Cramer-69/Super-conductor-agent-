@@ -45,11 +45,12 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8080
     debug: bool = False
-    
+
     # Data Paths
     raw_data_dir: str = "./data/raw"
     processed_data_dir: str = "./data/processed"
-    antigravity_brain_dir: str = "C:/Users/jjc29/.gemini/antigravity/brain"
+    # Leave blank by default; users opt in by setting ANTIGRAVITY_BRAIN_DIR.
+    antigravity_brain_dir: str = ""
     
     # Logging
     log_level: str = "INFO"
@@ -81,6 +82,33 @@ class Settings(BaseSettings):
             self.anthropic_api_key,
             self.google_api_key
         ])
+
+    def configured_providers(self) -> list[str]:
+        """Return names of providers with a non-placeholder key set."""
+        candidates = {
+            "openai": self.openai_api_key,
+            "anthropic": self.anthropic_api_key,
+            "google": self.google_api_key,
+            "xai": self.xai_api_key,
+            "perplexity": self.perplexity_api_key,
+        }
+        return [
+            name for name, key in candidates.items()
+            if key and not key.startswith("your_")
+        ]
+
+    def require_api_key(self) -> None:
+        """Fail fast at startup with an actionable error if no key is set."""
+        if self.configured_providers():
+            return
+        raise RuntimeError(
+            "No LLM API key is configured.\n"
+            "  - Local:     copy .env.example -> .env and set OPENAI_API_KEY=sk-...\n"
+            "  - Docker:    docker run -e OPENAI_API_KEY=sk-... -p 8080:8080 <image>\n"
+            "  - Cloud Run: gcloud run deploy --set-secrets "
+            "OPENAI_API_KEY=openai-api-key:latest\n"
+            "See README.md -> Deploy."
+        )
 
 
 # Global settings instance

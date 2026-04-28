@@ -233,6 +233,94 @@ ANTIGRAVITY_BRAIN_DIR=C:/Users/jjc29/.gemini/antigravity/brain
 - **No Telemetry**: ChromaDB telemetry disabled
 - **API Calls**: Only for embeddings (text only, no PII)
 
+## 🚀 Deploy
+
+The web/voice API in `api/server.py` runs anywhere a Python container runs. The
+recommended target is **Google Cloud Run** with the API key stored in **Secret
+Manager**. Local Docker and Render also work.
+
+### Required env vars
+
+At least one LLM provider key:
+
+| Variable | Where to get it |
+|---|---|
+| `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
+| `ANTHROPIC_API_KEY` | https://console.anthropic.com/settings/keys |
+| `GOOGLE_API_KEY` | https://aistudio.google.com/app/apikey |
+
+The container binds to `0.0.0.0:${PORT}` (default `8080`). Cloud Run / Render
+inject `PORT` automatically.
+
+### Local Docker
+
+```bash
+docker build -t conductor-agent .
+docker run --rm -p 8080:8080 -e OPENAI_API_KEY=sk-... conductor-agent
+# or pass a whole .env file:
+docker run --rm -p 8080:8080 --env-file .env conductor-agent
+```
+
+Open http://localhost:8080 and check `/health` — `api_keys_configured` should be
+`true`.
+
+### Google Cloud Run (recommended)
+
+One-time setup (replace `$PROJECT_ID`):
+
+```bash
+gcloud config set project $PROJECT_ID
+gcloud services enable run.googleapis.com \
+  artifactregistry.googleapis.com \
+  secretmanager.googleapis.com
+
+# Store the key in Secret Manager
+echo -n "sk-your-openai-key" | \
+  gcloud secrets create openai-api-key --data-file=-
+
+# Grant the Cloud Run runtime SA access (project-default Compute SA)
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+gcloud secrets add-iam-policy-binding openai-api-key \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+Build + deploy:
+
+```bash
+gcloud run deploy conductor-agent \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-secrets OPENAI_API_KEY=openai-api-key:latest
+```
+
+The deploy URL appears at the end. Hit `/health` to confirm
+`api_keys_configured: true`.
+
+To rotate the key:
+
+```bash
+echo -n "sk-new-key" | \
+  gcloud secrets versions add openai-api-key --data-file=-
+gcloud run services update conductor-agent --region us-central1 \
+  --set-secrets OPENAI_API_KEY=openai-api-key:latest
+```
+
+### Render
+
+The repo includes `render.yaml`. In the Render dashboard set `OPENAI_API_KEY`
+under **Environment** — do not commit it. Render injects `PORT` automatically.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `502` / "service unavailable" on Cloud Run | Container didn't bind to `$PORT`. Ensure you're using the Dockerfile in this repo (shell-form `CMD`). |
+| Logs show `No LLM API key is configured` | Set `OPENAI_API_KEY` (or `--set-secrets`) and redeploy. |
+| `/api/chat` returns 500 | Check `/health` — if `api_keys_configured: false`, the key isn't reaching the container. |
+| `FileNotFoundError` for `antigravity_brain_dir` | Leave `ANTIGRAVITY_BRAIN_DIR` blank unless you actually have that folder. |
+
 ## 🚧 Future Enhancements
 
 - [x ] LangGraph conductor orchestration with specialized sub-agents

@@ -1,21 +1,22 @@
-# Conductor Voice Agent
-# Production deployment with Gunicorn
-
 FROM python:3.11-slim
+
+# Install system dependencies including ffmpeg for audio processing
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# System deps (keep minimal; add build tools only if needed)
+RUN pip install --no-cache-dir --upgrade pip
 
-# Copy requirements
-COPY requirements.txt .
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir gunicorn
 
-# Copy application code
 COPY . .
 
 # Create necessary directories
@@ -25,4 +26,4 @@ RUN mkdir -p temp_audio logs data/chroma_db
 EXPOSE 8080
 
 # Run with Gunicorn (bind to platform-provided PORT; default to 8080 for local runs)
-CMD ["sh", "-c", "gunicorn api.server:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120"]
+CMD ["sh", "-c", "gunicorn api.server:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --worker-class uvicorn.workers.UvicornWorker --timeout 120"]

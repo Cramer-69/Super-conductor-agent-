@@ -3,11 +3,25 @@ Minimal, dependency-light conductor fallback used in cloud or when no
 AI provider is configured. Calls whichever LLM provider has a key set
 (Google/Gemini, OpenAI, Anthropic, or xAI/Grok), without ChromaDB.
 """
+import os
 from pathlib import Path
 from typing import Dict, Any, Iterator
-from skills.manager import SkillManager
 from utils.logger import logger
-from config import settings
+
+# ---------------------------------------------------------------------------
+# Optional SDK imports - use whichever is installed
+# ---------------------------------------------------------------------------
+try:
+    from openai import OpenAI as _OpenAI
+    _OPENAI_SDK = True
+except ImportError:
+    _OPENAI_SDK = False
+
+try:
+        import google.generativeai as _genai
+    _GOOGLE_SDK = True
+except (ImportError, Exception):
+    _GOOGLE_SDK = False
 
 
 class MinimalConductor:

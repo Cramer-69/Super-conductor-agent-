@@ -1,3 +1,5 @@
+# Render config kept for reference. Preferred deploy target is Google Cloud Run
+# (see README -> Deploy). Render still works with this file.
 services:
   - type: web
     name: conductor-voice-agent
@@ -8,6 +10,11 @@ services:
     envVars:
       - key: OPENAI_API_KEY
         sync: false
+      # Optional alternates — uncomment + set in Render dashboard if used:
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false
+      # - key: GOOGLE_API_KEY
+      #   sync: false
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: CHROMA_PERSIST_DIR

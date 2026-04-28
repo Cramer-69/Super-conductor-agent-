@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+build/
+dist/
+*.egg-info/
+
+# Runtime artifacts
+logs/
+temp_audio/
+data/chroma_db/
+data/raw/
+data/processed/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
