@@ -48,7 +48,12 @@ def get_conductor():
     global conductor
     if conductor is None:
         # Use minimal conductor in cloud environments (no ChromaDB)
-        is_cloud = os.getenv("RENDER") or os.getenv("RAILWAY") or os.getenv("HEROKU")
+        is_cloud = (
+            os.getenv("K_SERVICE")  # Cloud Run
+            or os.getenv("RENDER")
+            or os.getenv("RAILWAY")
+            or os.getenv("HEROKU")
+        )
         
         try:
             if is_cloud:
