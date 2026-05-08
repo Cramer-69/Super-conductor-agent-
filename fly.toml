@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for app-long-bush-3886 on 2026-05-08T20:58:48Z
+# fly.toml app configuration file generated for conductor-agent-2 on 2026-05-08
 #
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+# See https://fly.io/docs/reference/configuration/ for information about how to
 #
 
-app = 'app-long-bush-3886'
+app = 'conductor-agent-2'
 primary_region = 'iad'
 
 [build]
@@ -18,6 +18,3 @@ primary_region = 'iad'
 
 [[vm]]
   memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 256
