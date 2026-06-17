@@ -13,8 +13,8 @@ _pkg_dir = str(Path(__file__).resolve().parent.parent)
 if _pkg_dir not in sys.path:
     sys.path.insert(0, _pkg_dir)
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -43,12 +43,14 @@ app.add_middleware(
 conductor = None
 voice_processor = None
 
+
 def _is_cloud() -> bool:
     """True on Cloud Run / Render / Railway / Heroku — skip ChromaDB."""
     return any(
         os.getenv(v)
         for v in ("K_SERVICE", "RENDER", "RAILWAY", "HEROKU")
     )
+
 
 
 def get_conductor():
@@ -62,7 +64,7 @@ def get_conductor():
             or os.getenv("RAILWAY")
             or os.getenv("HEROKU")
         )
-        
+
         try:
             if is_cloud:
                 from conductor.minimal import MinimalConductor
@@ -78,16 +80,19 @@ def get_conductor():
                 from conductor.minimal import MinimalConductor
                 conductor = MinimalConductor()
                 logger.info("Fallback to minimal conductor due to error")
-            except:
+            except Exception:
                 raise ValueError(f"Could not initialize any conductor: {e}")
     return conductor
 
-def get_voice():
+
+
+def get_voice_processor_instance():
     """Lazy initialization of voice processor."""
     global voice_processor
     if voice_processor is None:
         voice_processor = get_voice_processor()
     return voice_processor
+
 
 # Create temp directory for audio files
 TEMP_DIR = Path("temp_audio")
@@ -119,12 +124,11 @@ async def root():
     """Serve the main web interface."""
     static_dir = Path(__file__).parent / "static"
     index_file = static_dir / "index.html"
-    
+
     if index_file.exists():
         with open(index_file, 'r', encoding='utf-8') as f:
             return f.read()
-    else:
-        return """
+    return """
         <html>
             <body>
                 <h1>Conductor Voice Agent</h1>
@@ -167,26 +171,26 @@ async def health_check():
 async def chat(request: ChatRequest):
     """
     Text-based chat endpoint.
-    
+
     Args:
         request: Chat request with query and optional platform filter
-        
+
     Returns:
         Chat response with answer and sources
     """
     try:
         logger.info(f"Chat request: {request.query[:100]}...")
-        
+
         result = get_conductor().chat(
             query=request.query,
             platform_filter=request.platform_filter
         )
-        
+
         return ChatResponse(
             response=result['response'],
             sources=result['sources']
         )
-        
+
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -197,10 +201,10 @@ async def voice_chat(audio: UploadFile = File(...)):
     """
     Voice-based chat endpoint.
     Accepts audio input, transcribes it, generates response, and returns audio.
-    
+
     Args:
         audio: Audio file (webm, mp3, wav, etc.)
-        
+
     Returns:
         JSON with transcription, response text, and URL to audio response
     """
@@ -208,22 +212,22 @@ async def voice_chat(audio: UploadFile = File(...)):
         # Save uploaded audio temporarily
         audio_id = str(uuid.uuid4())
         input_path = TEMP_DIR / f"input_{audio_id}.webm"
-        
+
         with open(input_path, "wb") as f:
             content = await audio.read()
             f.write(content)
-        
+
         logger.info(f"Received audio file: {input_path}")
-        
+
         # Transcribe audio to text
-        vp = get_voice()
+        vp = get_voice_processor_instance()
         transcription = await vp.transcribe_audio(input_path)
         logger.info(f"Transcription: {transcription}")
-        
+
         # Get response from conductor
         result = get_conductor().chat(query=transcription)
         response_text = result['response']
-        
+
         # Synthesize speech from response
         output_path = TEMP_DIR / f"output_{audio_id}.mp3"
         await vp.synthesize_speech(
@@ -231,17 +235,17 @@ async def voice_chat(audio: UploadFile = File(...)):
             output_path=output_path,
             voice=current_voice_settings.voice
         )
-        
+
         # Clean up input file
         input_path.unlink()
-        
+
         return {
             "transcription": transcription,
             "response": response_text,
             "sources": result['sources'],
             "audio_url": f"/api/audio/{output_path.name}"
         }
-        
+
     except Exception as e:
         logger.error(f"Error in voice chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -251,18 +255,18 @@ async def voice_chat(audio: UploadFile = File(...)):
 async def get_audio(filename: str):
     """
     Serve generated audio file.
-    
+
     Args:
         filename: Name of audio file
-        
+
     Returns:
         Audio file
     """
     file_path = TEMP_DIR / filename
-    
+
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
-    
+
     return FileResponse(
         file_path,
         media_type="audio/mpeg",
@@ -274,10 +278,10 @@ async def get_audio(filename: str):
 async def transcribe(audio: UploadFile = File(...)):
     """
     Transcribe audio to text only.
-    
+
     Args:
         audio: Audio file
-        
+
     Returns:
         Transcribed text
     """
@@ -285,19 +289,19 @@ async def transcribe(audio: UploadFile = File(...)):
         # Save temporarily
         audio_id = str(uuid.uuid4())
         temp_path = TEMP_DIR / f"temp_{audio_id}.webm"
-        
+
         with open(temp_path, "wb") as f:
             content = await audio.read()
             f.write(content)
-        
+
         # Transcribe
-        transcription = await voice_processor.transcribe_audio(temp_path)
-        
+        transcription = await get_voice_processor_instance().transcribe_audio(temp_path)
+
         # Clean up
         temp_path.unlink()
-        
+
         return {"transcription": transcription}
-        
+
     except Exception as e:
         logger.error(f"Error in transcribe endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -307,26 +311,26 @@ async def transcribe(audio: UploadFile = File(...)):
 async def synthesize(text: str, voice: Optional[str] = None):
     """
     Synthesize speech from text.
-    
+
     Args:
         text: Text to convert to speech
         voice: Optional voice to use
-        
+
     Returns:
         URL to audio file
     """
     try:
         audio_id = str(uuid.uuid4())
         output_path = TEMP_DIR / f"synth_{audio_id}.mp3"
-        
-        await voice_processor.synthesize_speech(
+
+        await get_voice_processor_instance().synthesize_speech(
             text=text,
             output_path=output_path,
             voice=voice or current_voice_settings.voice
         )
-        
+
         return {"audio_url": f"/api/audio/{output_path.name}"}
-        
+
     except Exception as e:
         logger.error(f"Error in synthesize endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -335,7 +339,7 @@ async def synthesize(text: str, voice: Optional[str] = None):
 @app.get("/api/voices")
 async def get_voices():
     """Get available TTS voices."""
-    return {"voices": voice_processor.get_available_voices()}
+    return {"voices": get_voice_processor_instance().get_available_voices()}
 
 
 @app.post("/api/settings/voice")
@@ -346,7 +350,7 @@ async def set_voice(settings: VoiceSettings):
 
 
 @app.get("/api/settings/voice")
-async def get_voice():
+async def get_voice_settings():
     """Get current voice settings."""
     return {"voice": current_voice_settings.voice}
 
@@ -359,13 +363,13 @@ if static_dir.exists():
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     port = int(os.getenv("PORT", 8080))
-    
+
     logger.info(f"Starting Conductor Voice Agent on port {port}")
-    
+
     uvicorn.run(
-        app,
+        "api.server:app",
         host="0.0.0.0",
         port=port,
         log_level="info"
