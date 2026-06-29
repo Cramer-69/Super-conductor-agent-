@@ -117,9 +117,13 @@ settings = Settings()
 
 # Ensure required directories exist
 def init_directories():
-    """Create necessary directories if they don't exist."""
+    """Create necessary directories if they don't exist.
+
+    Tolerates read-only filesystems (Cloud Run) — silently skips any path
+    that can't be created instead of crashing the whole module at import.
+    """
     base = settings.get_base_path()
-    
+
     dirs_to_create = [
         base / "data",
         base / "data" / "raw",
@@ -127,9 +131,12 @@ def init_directories():
         base / "data" / "chroma_db",
         base / "logs",
     ]
-    
+
     for dir_path in dirs_to_create:
-        dir_path.mkdir(parents=True, exist_ok=True)
+        try:
+            dir_path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
 
 
 # Initialize on import

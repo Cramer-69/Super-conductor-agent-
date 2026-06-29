@@ -18,10 +18,11 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from conductor.agent import ConductorAgent
-from voice.voice_processor import get_voice_processor
 from utils.logger import logger
 from config.settings import settings
+# NOTE: conductor.agent and voice.voice_processor are imported lazily inside
+# get_conductor() / get_voice_processor_instance() so the FastAPI module can
+# load on Cloud Run even when ChromaDB or sentence-transformers are unhappy.
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -71,6 +72,7 @@ def get_conductor():
                 conductor = MinimalConductor()
                 logger.info("Using minimal conductor (cloud mode - no memory)")
             else:
+                from conductor.agent import ConductorAgent
                 conductor = ConductorAgent()
                 logger.info("Using full conductor (local mode - with memory)")
         except Exception as e:
@@ -90,13 +92,14 @@ def get_voice_processor_instance():
     """Lazy initialization of voice processor."""
     global voice_processor
     if voice_processor is None:
+        from voice.voice_processor import get_voice_processor
         voice_processor = get_voice_processor()
     return voice_processor
 
 
-# Create temp directory for audio files
-TEMP_DIR = Path("temp_audio")
-TEMP_DIR.mkdir(exist_ok=True)
+# Cloud Run / Render only guarantee /tmp is writable across requests.
+TEMP_DIR = Path("/tmp/conductor_audio") if _is_cloud() else Path("temp_audio")
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Request/Response Models

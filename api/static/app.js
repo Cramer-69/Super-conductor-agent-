@@ -73,26 +73,56 @@ async function sendTextMessage(text) {
     }
 }
 
+// Pick a MIME type the browser actually supports. iOS Safari does NOT
+// support webm — it needs mp4/m4a. We try webm first (Chrome/Firefox),
+// then mp4 (Safari), then fall back to whatever the browser defaults to.
+function pickAudioMimeType() {
+    const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+    ];
+    for (const t of candidates) {
+        if (typeof MediaRecorder !== 'undefined' &&
+            MediaRecorder.isTypeSupported &&
+            MediaRecorder.isTypeSupported(t)) {
+            return t;
+        }
+    }
+    return '';
+}
+
+let recordingMimeType = '';
+let recordingExtension = 'webm';
+
 // Setup microphone
 async function setupMicrophone() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream, {
-            mimeType: 'audio/webm'
-        });
+        recordingMimeType = pickAudioMimeType();
+        recordingExtension = recordingMimeType.includes('mp4') ? 'm4a'
+                          : recordingMimeType.includes('ogg') ? 'ogg'
+                          : 'webm';
+
+        mediaRecorder = recordingMimeType
+            ? new MediaRecorder(stream, { mimeType: recordingMimeType })
+            : new MediaRecorder(stream);
 
         mediaRecorder.ondataavailable = (event) => {
             audioChunks.push(event.data);
         };
 
         mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const blobType = recordingMimeType || mediaRecorder.mimeType || 'audio/webm';
+            const audioBlob = new Blob(audioChunks, { type: blobType });
             audioChunks = [];
             await sendVoiceMessage(audioBlob);
         };
 
         micButton.addEventListener('click', toggleRecording);
-        
+
     } catch (error) {
         showStatus('Microphone access denied. Please allow microphone access.', 'error');
         console.error('Microphone error:', error);
@@ -137,9 +167,10 @@ async function sendVoiceMessage(audioBlob) {
         // Add user message placeholder
         addMessage('user', '🎤 Voice message...', true);
         
-        // Create form data
+        // Create form data — use the extension matching whatever the
+        // browser actually recorded (webm for Chrome, m4a for Safari).
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.webm');
+        formData.append('audio', audioBlob, `recording.${recordingExtension}`);
         
         // Send to API
         const response = await fetch('/api/voice-chat', {
