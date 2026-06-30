@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     xai_api_key: Optional[str] = None
     
     # Model Configuration
+    conductor_build_id: str = "solo-openai"
     conductor_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
     
