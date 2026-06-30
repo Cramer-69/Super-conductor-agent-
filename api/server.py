@@ -171,6 +171,9 @@ async def health_check():
         "service": "conductor-voice-agent",
         "version": "1.0.0",
         "mode": "cloud-agent" if _is_cloud() else "full",
+        "build_id": getattr(getattr(runtime, "build", None), "build_id", None),
+        "build_mode": getattr(getattr(runtime, "build", None), "mode", None),
+        "lead_provider": getattr(getattr(runtime, "build", None), "lead", None),
         "providers": providers,
         "active_provider": getattr(runtime, "provider", None),
         "active_model": getattr(runtime, "model", None),
@@ -226,7 +229,6 @@ async def voice_chat(
         JSON with transcription, response text, and URL to audio response
     """
     try:
-        # Save uploaded audio temporarily
         audio_id = str(uuid.uuid4())
         input_path = TEMP_DIR / f"input_{audio_id}.webm"
 
@@ -236,19 +238,16 @@ async def voice_chat(
 
         logger.info(f"Received audio file: {input_path}")
 
-        # Transcribe audio to text
         vp = get_voice_processor_instance()
         transcription = await vp.transcribe_audio(input_path)
         logger.info(f"Transcription: {transcription}")
 
-        # Get response from conductor
         result = get_conductor().chat(
             query=transcription,
             conversation_id=conversation_id,
         )
         response_text = result['response']
 
-        # Synthesize speech from response
         output_path = TEMP_DIR / f"output_{audio_id}.mp3"
         await vp.synthesize_speech(
             text=response_text,
@@ -256,7 +255,6 @@ async def voice_chat(
             voice=current_voice_settings.voice
         )
 
-        # Clean up input file
         input_path.unlink()
 
         return {
@@ -307,7 +305,6 @@ async def transcribe(audio: UploadFile = File(...)):
         Transcribed text
     """
     try:
-        # Save temporarily
         audio_id = str(uuid.uuid4())
         temp_path = TEMP_DIR / f"temp_{audio_id}.webm"
 
@@ -315,10 +312,8 @@ async def transcribe(audio: UploadFile = File(...)):
             content = await audio.read()
             f.write(content)
 
-        # Transcribe
         transcription = await get_voice_processor_instance().transcribe_audio(temp_path)
 
-        # Clean up
         temp_path.unlink()
 
         return {"transcription": transcription}
@@ -376,7 +371,6 @@ async def get_voice_settings():
     return {"voice": current_voice_settings.voice}
 
 
-# Mount static files (will create later)
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
