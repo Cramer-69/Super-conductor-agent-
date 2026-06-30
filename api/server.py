@@ -13,7 +13,7 @@ _pkg_dir = str(Path(__file__).resolve().parent.parent)
 if _pkg_dir not in sys.path:
     sys.path.insert(0, _pkg_dir)
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -106,12 +106,14 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 class ChatRequest(BaseModel):
     query: str
     platform_filter: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     response: str
     sources: list
     audio_url: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 
 class VoiceSettings(BaseModel):
@@ -160,12 +162,19 @@ async def _startup_log_config():
 async def health_check():
     """Health check endpoint."""
     providers = settings.configured_providers()
+    runtime = get_conductor()
+    capabilities = ["text_chat", "voice_input", "voice_output"]
+    if getattr(runtime, "provider", None) == "openai":
+        capabilities.extend(["durable_conversation", "live_web_search"])
     return {
         "status": "healthy",
         "service": "conductor-voice-agent",
         "version": "1.0.0",
-        "mode": "minimal" if _is_cloud() else "full",
+        "mode": "cloud-agent" if _is_cloud() else "full",
         "providers": providers,
+        "active_provider": getattr(runtime, "provider", None),
+        "active_model": getattr(runtime, "model", None),
+        "capabilities": capabilities,
         "api_keys_configured": bool(providers),
     }
 
@@ -186,12 +195,14 @@ async def chat(request: ChatRequest):
 
         result = get_conductor().chat(
             query=request.query,
-            platform_filter=request.platform_filter
+            platform_filter=request.platform_filter,
+            conversation_id=request.conversation_id,
         )
 
         return ChatResponse(
             response=result['response'],
-            sources=result['sources']
+            sources=result['sources'],
+            conversation_id=result.get('conversation_id'),
         )
 
     except Exception as e:
@@ -200,7 +211,10 @@ async def chat(request: ChatRequest):
 
 
 @app.post("/api/voice-chat")
-async def voice_chat(audio: UploadFile = File(...)):
+async def voice_chat(
+    audio: UploadFile = File(...),
+    conversation_id: Optional[str] = Form(None),
+):
     """
     Voice-based chat endpoint.
     Accepts audio input, transcribes it, generates response, and returns audio.
@@ -228,7 +242,10 @@ async def voice_chat(audio: UploadFile = File(...)):
         logger.info(f"Transcription: {transcription}")
 
         # Get response from conductor
-        result = get_conductor().chat(query=transcription)
+        result = get_conductor().chat(
+            query=transcription,
+            conversation_id=conversation_id,
+        )
         response_text = result['response']
 
         # Synthesize speech from response
@@ -246,7 +263,8 @@ async def voice_chat(audio: UploadFile = File(...)):
             "transcription": transcription,
             "response": response_text,
             "sources": result['sources'],
-            "audio_url": f"/api/audio/{output_path.name}"
+            "audio_url": f"/api/audio/{output_path.name}",
+            "conversation_id": result.get('conversation_id'),
         }
 
     except Exception as e:
