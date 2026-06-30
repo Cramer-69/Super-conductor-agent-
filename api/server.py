@@ -13,15 +13,16 @@ _pkg_dir = str(Path(__file__).resolve().parent.parent)
 if _pkg_dir not in sys.path:
     sys.path.insert(0, _pkg_dir)
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from conductor.agent import ConductorAgent
-from voice.voice_processor import get_voice_processor
 from utils.logger import logger
 from config.settings import settings
+# NOTE: conductor.agent and voice.voice_processor are imported lazily inside
+# get_conductor() / get_voice_processor_instance() so the FastAPI module can
+# load on Cloud Run even when ChromaDB or sentence-transformers are unhappy.
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -71,6 +72,7 @@ def get_conductor():
                 conductor = MinimalConductor()
                 logger.info("Using minimal conductor (cloud mode - no memory)")
             else:
+                from conductor.agent import ConductorAgent
                 conductor = ConductorAgent()
                 logger.info("Using full conductor (local mode - with memory)")
         except Exception as e:
@@ -90,25 +92,28 @@ def get_voice_processor_instance():
     """Lazy initialization of voice processor."""
     global voice_processor
     if voice_processor is None:
+        from voice.voice_processor import get_voice_processor
         voice_processor = get_voice_processor()
     return voice_processor
 
 
-# Create temp directory for audio files
-TEMP_DIR = Path("temp_audio")
-TEMP_DIR.mkdir(exist_ok=True)
+# Cloud Run / Render only guarantee /tmp is writable across requests.
+TEMP_DIR = Path("/tmp/conductor_audio") if _is_cloud() else Path("temp_audio")
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Request/Response Models
 class ChatRequest(BaseModel):
     query: str
     platform_filter: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     response: str
     sources: list
     audio_url: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 
 class VoiceSettings(BaseModel):
@@ -157,12 +162,22 @@ async def _startup_log_config():
 async def health_check():
     """Health check endpoint."""
     providers = settings.configured_providers()
+    runtime = get_conductor()
+    capabilities = ["text_chat", "voice_input", "voice_output"]
+    if getattr(runtime, "provider", None) == "openai":
+        capabilities.extend(["durable_conversation", "live_web_search"])
     return {
         "status": "healthy",
         "service": "conductor-voice-agent",
         "version": "1.0.0",
-        "mode": "minimal" if _is_cloud() else "full",
+        "mode": "cloud-agent" if _is_cloud() else "full",
+        "build_id": getattr(getattr(runtime, "build", None), "build_id", None),
+        "build_mode": getattr(getattr(runtime, "build", None), "mode", None),
+        "lead_provider": getattr(getattr(runtime, "build", None), "lead", None),
         "providers": providers,
+        "active_provider": getattr(runtime, "provider", None),
+        "active_model": getattr(runtime, "model", None),
+        "capabilities": capabilities,
         "api_keys_configured": bool(providers),
     }
 
@@ -183,12 +198,14 @@ async def chat(request: ChatRequest):
 
         result = get_conductor().chat(
             query=request.query,
-            platform_filter=request.platform_filter
+            platform_filter=request.platform_filter,
+            conversation_id=request.conversation_id,
         )
 
         return ChatResponse(
             response=result['response'],
-            sources=result['sources']
+            sources=result['sources'],
+            conversation_id=result.get('conversation_id'),
         )
 
     except Exception as e:
@@ -197,7 +214,10 @@ async def chat(request: ChatRequest):
 
 
 @app.post("/api/voice-chat")
-async def voice_chat(audio: UploadFile = File(...)):
+async def voice_chat(
+    audio: UploadFile = File(...),
+    conversation_id: Optional[str] = Form(None),
+):
     """
     Voice-based chat endpoint.
     Accepts audio input, transcribes it, generates response, and returns audio.
@@ -209,7 +229,6 @@ async def voice_chat(audio: UploadFile = File(...)):
         JSON with transcription, response text, and URL to audio response
     """
     try:
-        # Save uploaded audio temporarily
         audio_id = str(uuid.uuid4())
         input_path = TEMP_DIR / f"input_{audio_id}.webm"
 
@@ -219,16 +238,16 @@ async def voice_chat(audio: UploadFile = File(...)):
 
         logger.info(f"Received audio file: {input_path}")
 
-        # Transcribe audio to text
         vp = get_voice_processor_instance()
         transcription = await vp.transcribe_audio(input_path)
         logger.info(f"Transcription: {transcription}")
 
-        # Get response from conductor
-        result = get_conductor().chat(query=transcription)
+        result = get_conductor().chat(
+            query=transcription,
+            conversation_id=conversation_id,
+        )
         response_text = result['response']
 
-        # Synthesize speech from response
         output_path = TEMP_DIR / f"output_{audio_id}.mp3"
         await vp.synthesize_speech(
             text=response_text,
@@ -236,14 +255,14 @@ async def voice_chat(audio: UploadFile = File(...)):
             voice=current_voice_settings.voice
         )
 
-        # Clean up input file
         input_path.unlink()
 
         return {
             "transcription": transcription,
             "response": response_text,
             "sources": result['sources'],
-            "audio_url": f"/api/audio/{output_path.name}"
+            "audio_url": f"/api/audio/{output_path.name}",
+            "conversation_id": result.get('conversation_id'),
         }
 
     except Exception as e:
@@ -286,7 +305,6 @@ async def transcribe(audio: UploadFile = File(...)):
         Transcribed text
     """
     try:
-        # Save temporarily
         audio_id = str(uuid.uuid4())
         temp_path = TEMP_DIR / f"temp_{audio_id}.webm"
 
@@ -294,10 +312,8 @@ async def transcribe(audio: UploadFile = File(...)):
             content = await audio.read()
             f.write(content)
 
-        # Transcribe
         transcription = await get_voice_processor_instance().transcribe_audio(temp_path)
 
-        # Clean up
         temp_path.unlink()
 
         return {"transcription": transcription}
@@ -355,7 +371,6 @@ async def get_voice_settings():
     return {"voice": current_voice_settings.voice}
 
 
-# Mount static files (will create later)
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

@@ -3,6 +3,7 @@ let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 let currentAudio = null;
+let conversationId = localStorage.getItem('conductor_conversation_id');
 
 const micButton = document.getElementById('micButton');
 const status = document.getElementById('status');
@@ -50,19 +51,20 @@ async function sendTextMessage(text) {
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: text })
+            body: JSON.stringify({
+                query: text,
+                conversation_id: conversationId
+            })
         });
         
         if (!response.ok) throw new Error('API request failed');
         
         const data = await response.json();
+        rememberConversation(data.conversation_id);
         addMessage('assistant', data.response);
         
         if (data.sources && data.sources.length > 0) {
-            const sourcesText = data.sources.slice(0, 2).map(s => 
-                `📚 ${s.platform.toUpperCase()}: ${s.title}`
-            ).join('\n');
-            addMessage('system', sourcesText, true);
+            addSources(data.sources);
         }
         
         showStatus('Type a message or tap 🎤 to talk', 'ready');
@@ -73,26 +75,56 @@ async function sendTextMessage(text) {
     }
 }
 
+// Pick a MIME type the browser actually supports. iOS Safari does NOT
+// support webm — it needs mp4/m4a. We try webm first (Chrome/Firefox),
+// then mp4 (Safari), then fall back to whatever the browser defaults to.
+function pickAudioMimeType() {
+    const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+    ];
+    for (const t of candidates) {
+        if (typeof MediaRecorder !== 'undefined' &&
+            MediaRecorder.isTypeSupported &&
+            MediaRecorder.isTypeSupported(t)) {
+            return t;
+        }
+    }
+    return '';
+}
+
+let recordingMimeType = '';
+let recordingExtension = 'webm';
+
 // Setup microphone
 async function setupMicrophone() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream, {
-            mimeType: 'audio/webm'
-        });
+        recordingMimeType = pickAudioMimeType();
+        recordingExtension = recordingMimeType.includes('mp4') ? 'm4a'
+                          : recordingMimeType.includes('ogg') ? 'ogg'
+                          : 'webm';
+
+        mediaRecorder = recordingMimeType
+            ? new MediaRecorder(stream, { mimeType: recordingMimeType })
+            : new MediaRecorder(stream);
 
         mediaRecorder.ondataavailable = (event) => {
             audioChunks.push(event.data);
         };
 
         mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const blobType = recordingMimeType || mediaRecorder.mimeType || 'audio/webm';
+            const audioBlob = new Blob(audioChunks, { type: blobType });
             audioChunks = [];
             await sendVoiceMessage(audioBlob);
         };
 
         micButton.addEventListener('click', toggleRecording);
-        
+
     } catch (error) {
         showStatus('Microphone access denied. Please allow microphone access.', 'error');
         console.error('Microphone error:', error);
@@ -137,9 +169,13 @@ async function sendVoiceMessage(audioBlob) {
         // Add user message placeholder
         addMessage('user', '🎤 Voice message...', true);
         
-        // Create form data
+        // Create form data — use the extension matching whatever the
+        // browser actually recorded (webm for Chrome, m4a for Safari).
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.webm');
+        formData.append('audio', audioBlob, `recording.${recordingExtension}`);
+        if (conversationId) {
+            formData.append('conversation_id', conversationId);
+        }
         
         // Send to API
         const response = await fetch('/api/voice-chat', {
@@ -152,6 +188,7 @@ async function sendVoiceMessage(audioBlob) {
         }
         
         const data = await response.json();
+        rememberConversation(data.conversation_id);
         
         // Update user message with transcription
         updateLastMessage('user', data.transcription);
@@ -161,10 +198,7 @@ async function sendVoiceMessage(audioBlob) {
         
         // Add sources if available
         if (data.sources && data.sources.length > 0) {
-            const sourcesText = data.sources.slice(0, 2).map(s => 
-                `📚 ${s.platform.toUpperCase()}: ${s.title}`
-            ).join('\n');
-            addMessage('system', sourcesText, true);
+            addSources(data.sources);
         }
         
         // Play audio response
@@ -200,12 +234,55 @@ function addMessage(role, text, small = false) {
     return messageDiv;
 }
 
+function addSources(sources) {
+    const sourceDiv = document.createElement('div');
+    sourceDiv.className = 'message p-4 rounded-2xl bg-white/10 text-xs text-white';
+
+    const heading = document.createElement('div');
+    heading.textContent = '📚 Sources';
+    heading.className = 'font-semibold mb-2';
+    sourceDiv.appendChild(heading);
+
+    sources.slice(0, 4).forEach((source) => {
+        const row = document.createElement('div');
+        const link = document.createElement('a');
+        link.textContent = source.title || source.url || 'Source';
+        link.href = source.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.className = 'underline break-words';
+        row.appendChild(link);
+        sourceDiv.appendChild(row);
+    });
+
+    messages.appendChild(sourceDiv);
+    messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
+}
+
 // Update last message
 function updateLastMessage(role, text) {
     const lastMessage = messages.lastElementChild;
     if (lastMessage) {
         lastMessage.textContent = text;
     }
+}
+
+function rememberConversation(id) {
+    if (!id) return;
+    conversationId = id;
+    localStorage.setItem('conductor_conversation_id', id);
+}
+
+function startNewConversation() {
+    conversationId = null;
+    localStorage.removeItem('conductor_conversation_id');
+    messages.innerHTML = `
+        <div class="text-white text-center opacity-75 py-8">
+            <p class="text-lg mb-2">👋 New conversation</p>
+            <p class="text-sm">Type a message or tap the microphone</p>
+        </div>
+    `;
+    showStatus('New conversation started', 'ready');
 }
 
 // Play audio
@@ -245,6 +322,11 @@ function loadSettings() {
         localStorage.setItem('voice', voiceSelect.value);
         saveVoiceSettings();
     });
+
+    const newConversationButton = document.getElementById('newConversationButton');
+    if (newConversationButton) {
+        newConversationButton.addEventListener('click', startNewConversation);
+    }
 }
 
 async function saveVoiceSettings() {

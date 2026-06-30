@@ -14,8 +14,11 @@ WORKDIR /app
 # System deps (keep minimal; add build tools only if needed)
 RUN pip install --no-cache-dir --upgrade pip
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Use the slim cloud manifest — heavy local-only deps (chromadb,
+# sentence-transformers, langchain) are imported lazily and never run on
+# Cloud Run, so we don't ship them in the container.
+COPY requirements-cloud.txt ./
+RUN pip install --no-cache-dir -r requirements-cloud.txt
 
 COPY . .
 
