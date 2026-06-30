@@ -246,14 +246,23 @@ async def voice_chat(audio: UploadFile = File(...)):
         result = get_conductor().chat(query=transcription)
         response_text = result['response']
 
-        # Synthesize speech from response
-        # Pass a .mp3 hint; Gemini TTS will change it to .wav internally
+        # Synthesize speech — use multi-speaker Council TTS when evidence has
+        # multiple distinct providers (Council build), otherwise single-voice.
         output_hint = TEMP_DIR / f"output_{audio_id}.mp3"
-        actual_output = await vp.synthesize_speech(
-            text=response_text,
-            output_path=output_hint,
-            voice=current_voice_settings.voice,
-        )
+        evidence = result.get("evidence", [])
+        is_council = len({e["provider"] for e in evidence}) > 2
+
+        if is_council and hasattr(vp, "synthesize_council_speech"):
+            actual_output = await vp.synthesize_council_speech(
+                segments=evidence,
+                output_path=output_hint,
+            )
+        else:
+            actual_output = await vp.synthesize_speech(
+                text=response_text,
+                output_path=output_hint,
+                voice=current_voice_settings.voice,
+            )
 
         # Clean up input file
         input_path.unlink()

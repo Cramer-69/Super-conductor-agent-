@@ -104,7 +104,7 @@ class VoiceProcessor:
         if self._google_key:
             self.tts_backend = "gemini"
             self.tts_voice = "Zephyr"       # default Gemini voice
-            self.tts_model = "gemini-2.5-flash-preview-tts"
+            self.tts_model = "gemini-3.1-flash-tts-preview"
         elif self._openai_key:
             self.tts_backend = "openai"
             self.tts_voice = "nova"
@@ -255,6 +255,107 @@ class VoiceProcessor:
         response.stream_to_file(str(output_path))
         logger.info(f"OpenAI TTS saved: {output_path}")
         return output_path
+
+    # ------------------------------------------------------------------ #
+    #  Multi-speaker Council synthesis                                     #
+    # ------------------------------------------------------------------ #
+
+    # Maps provider name → Gemini prebuilt voice
+    COUNCIL_VOICE_MAP = {
+        "xai":       "Puck",     # Grok: upbeat, energetic
+        "anthropic": "Charon",   # Claude: informative, calm
+        "google":    "Zephyr",   # Gemini: bright, clear
+        "synthesis": "Kore",     # Final synthesis: firm, authoritative
+        "openai":    "Aoede",    # OpenAI: breezy, natural (fallback)
+    }
+
+    async def synthesize_council_speech(
+        self,
+        segments: list,
+        output_path: Optional[Path] = None,
+    ) -> Path:
+        """
+        Synthesize a Council response where each AI speaks in its own voice.
+
+        Args:
+            segments: list of {"speaker": provider_name, "text": "..."}
+                      speaker values match COUNCIL_VOICE_MAP keys
+            output_path: where to save the WAV file
+
+        Returns:
+            Path to the WAV file
+        """
+        if self.tts_backend != "gemini" or not self._google_key:
+            # Fall back to single-voice synthesis of the last segment's text
+            last_text = segments[-1]["text"] if segments else ""
+            return await self.synthesize_speech(last_text, output_path)
+
+        from google import genai as gai
+        from google.genai import types as gtypes
+
+        client = gai.Client(api_key=self._google_key)
+        if not output_path:
+            output_path = Path("temp_council.wav")
+
+        # Build the transcript with labeled speaker turns
+        transcript_parts = []
+        speaker_configs = []
+        seen_voices: dict[str, str] = {}
+
+        for seg in segments:
+            provider = seg.get("speaker", "synthesis").lower()
+            # Normalise synthesis label
+            if "(synthesis)" in provider:
+                provider = "synthesis"
+            voice_name = self.COUNCIL_VOICE_MAP.get(provider, "Kore")
+            label = provider.capitalize()
+            transcript_parts.append(f"{label}: {seg['text']}")
+            if provider not in seen_voices:
+                seen_voices[provider] = voice_name
+                speaker_configs.append(
+                    gtypes.SpeakerVoiceConfig(
+                        speaker=label,
+                        voice_config=gtypes.VoiceConfig(
+                            prebuilt_voice_config=gtypes.PrebuiltVoiceConfig(
+                                voice_name=voice_name
+                            )
+                        ),
+                    )
+                )
+
+        transcript = "\n".join(transcript_parts)
+        logger.info(f"Council TTS: {len(segments)} speakers, model={self.tts_model}")
+
+        config = gtypes.GenerateContentConfig(
+            temperature=1,
+            response_modalities=["audio"],
+            speech_config=gtypes.SpeechConfig(
+                multi_speaker_voice_config=gtypes.MultiSpeakerVoiceConfig(
+                    speaker_voice_configs=speaker_configs
+                )
+            ),
+        )
+
+        audio_chunks: list[bytes] = []
+        last_mime = "audio/L16;rate=24000"
+
+        for chunk in client.models.generate_content_stream(
+            model=self.tts_model,
+            contents=[gtypes.Content(role="user", parts=[gtypes.Part.from_text(transcript)])],
+            config=config,
+        ):
+            if not chunk.parts:
+                continue
+            part = chunk.parts[0]
+            if part.inline_data and part.inline_data.data:
+                last_mime = part.inline_data.mime_type or last_mime
+                audio_chunks.append(part.inline_data.data)
+
+        raw = b"".join(audio_chunks)
+        wav_path = output_path.with_suffix(".wav")
+        wav_path.write_bytes(_pcm_to_wav(raw, last_mime))
+        logger.info(f"Council TTS saved: {wav_path} ({len(raw)} bytes PCM)")
+        return wav_path
 
     # ------------------------------------------------------------------ #
     #  Voice list                                                          #
