@@ -9,19 +9,23 @@ requiring an in-container database.
 """
 import os
 from typing import Dict, Any, Iterator, Optional
+from config.builds import get_active_build
 from utils.logger import logger
 
 
-def _provider_for_keys() -> tuple:
-    """Pick (provider, model) based on which env var is set."""
-    if os.getenv("OPENAI_API_KEY", "").startswith("sk-"):
+def _provider_for_keys(lead: str) -> tuple:
+    """Resolve the configured build lead to an available provider and model."""
+    if lead == "openai" and os.getenv("OPENAI_API_KEY", "").startswith("sk-"):
         return "openai", os.getenv("OPENAI_MODEL", "gpt-5.5")
-    if os.getenv("GOOGLE_API_KEY"):
+    if lead == "google" and os.getenv("GOOGLE_API_KEY"):
         return "google", os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return "anthropic", "claude-3-5-haiku-latest"
-    if os.getenv("XAI_API_KEY"):
-        return "xai", "grok-2-latest"
+    if lead == "anthropic" and os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic", os.getenv(
+            "ANTHROPIC_MODEL",
+            "claude-3-5-haiku-latest",
+        )
+    if lead == "xai" and os.getenv("XAI_API_KEY"):
+        return "xai", os.getenv("XAI_MODEL", "grok-2-latest")
     return "none", "minimal"
 
 
@@ -32,8 +36,13 @@ class MinimalConductor:
         self.retriever = None
         self.current_skill = None
         self.skill_manager = None
-        self.provider, self.model = _provider_for_keys()
-        logger.info(f"MinimalConductor initialized (provider={self.provider}, model={self.model})")
+        self.build = get_active_build()
+        self.provider, self.model = _provider_for_keys(self.build.lead)
+        logger.info(
+            "MinimalConductor initialized "
+            f"(build={self.build.build_id}, provider={self.provider}, "
+            f"model={self.model})"
+        )
 
     def activate_skill(self, skill_name: str) -> bool:
         return False
@@ -167,8 +176,8 @@ generic AI disclaimer. Never invent completed actions.
                 text = self._call_xai(query)
             else:
                 text = (
-                    "Minimal mode: no AI provider configured. "
-                    "Set OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY or XAI_API_KEY."
+                    f"Build {self.build.build_id} requires its "
+                    f"{self.build.lead} provider secret, but it is not configured."
                 )
         except Exception as e:
             logger.error(f"MinimalConductor provider call failed ({self.provider}): {e}")
