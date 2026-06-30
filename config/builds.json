@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "shared_kernel": {
+    "durable_state": true,
+    "evidence_required": true,
+    "approval_gates": [
+      "spend",
+      "delete",
+      "publish",
+      "credentials",
+      "permissions",
+      "account_change",
+      "irreversible_external_action"
+    ]
+  },
+  "builds": {
+    "solo-openai": {
+      "mode": "solo",
+      "lead": "openai",
+      "model_env": "OPENAI_MODEL",
+      "verified_default_model": "gpt-5.5",
+      "status": "deployed_verified"
+    },
+    "solo-claude": {
+      "mode": "solo",
+      "lead": "anthropic",
+      "model_env": "ANTHROPIC_MODEL",
+      "status": "planned"
+    },
+    "solo-gemini": {
+      "mode": "solo",
+      "lead": "google",
+      "model_env": "GEMINI_MODEL",
+      "status": "planned"
+    },
+    "solo-grok": {
+      "mode": "solo",
+      "lead": "xai",
+      "model_env": "XAI_MODEL",
+      "status": "planned"
+    },
+    "council-openai": {
+      "mode": "council",
+      "lead": "openai",
+      "specialists": ["anthropic", "google", "xai"],
+      "status": "planned"
+    },
+    "council-claude": {
+      "mode": "council",
+      "lead": "anthropic",
+      "specialists": ["openai", "google", "xai"],
+      "status": "planned"
+    },
+    "council-gemini": {
+      "mode": "council",
+      "lead": "google",
+      "specialists": ["openai", "anthropic", "xai"],
+      "status": "planned"
+    },
+    "council-grok": {
+      "mode": "council",
+      "lead": "xai",
+      "specialists": ["openai", "anthropic", "google"],
+      "status": "planned"
+    }
+  }
+}
