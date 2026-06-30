@@ -103,12 +103,15 @@ TEMP_DIR.mkdir(exist_ok=True)
 class ChatRequest(BaseModel):
     query: str
     platform_filter: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     response: str
     sources: list
     audio_url: Optional[str] = None
+    conversation_id: Optional[str] = None
+    build_id: Optional[str] = None
 
 
 class VoiceSettings(BaseModel):
@@ -157,6 +160,13 @@ async def _startup_log_config():
 async def health_check():
     """Health check endpoint."""
     providers = settings.configured_providers()
+    build_info: dict = {}
+    try:
+        c = get_conductor()
+        if hasattr(c, "get_build_info"):
+            build_info = c.get_build_info()
+    except Exception:
+        pass
     return {
         "status": "healthy",
         "service": "conductor-voice-agent",
@@ -164,6 +174,7 @@ async def health_check():
         "mode": "minimal" if _is_cloud() else "full",
         "providers": providers,
         "api_keys_configured": bool(providers),
+        **build_info,
     }
 
 
@@ -181,14 +192,21 @@ async def chat(request: ChatRequest):
     try:
         logger.info(f"Chat request: {request.query[:100]}...")
 
-        result = get_conductor().chat(
-            query=request.query,
-            platform_filter=request.platform_filter
-        )
+        conductor = get_conductor()
+        kwargs: dict = {
+            "query": request.query,
+            "platform_filter": request.platform_filter,
+        }
+        if hasattr(conductor, "chat") and request.conversation_id is not None:
+            kwargs["conversation_id"] = request.conversation_id
+
+        result = conductor.chat(**kwargs)
 
         return ChatResponse(
-            response=result['response'],
-            sources=result['sources']
+            response=result["response"],
+            sources=result["sources"],
+            conversation_id=result.get("conversation_id"),
+            build_id=result.get("build_id"),
         )
 
     except Exception as e:

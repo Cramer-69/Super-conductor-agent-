@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # Model Configuration
     conductor_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
+    # Build profile: auto | solo-google | solo-openai | solo-anthropic | solo-xai | pipeline-grok-claude
+    conductor_build_id: str = "auto"
     
     # Vector Database
     chroma_persist_dir: str = "./data/chroma_db"
