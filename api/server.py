@@ -247,11 +247,12 @@ async def voice_chat(audio: UploadFile = File(...)):
         response_text = result['response']
 
         # Synthesize speech from response
-        output_path = TEMP_DIR / f"output_{audio_id}.mp3"
-        await vp.synthesize_speech(
+        # Pass a .mp3 hint; Gemini TTS will change it to .wav internally
+        output_hint = TEMP_DIR / f"output_{audio_id}.mp3"
+        actual_output = await vp.synthesize_speech(
             text=response_text,
-            output_path=output_path,
-            voice=current_voice_settings.voice
+            output_path=output_hint,
+            voice=current_voice_settings.voice,
         )
 
         # Clean up input file
@@ -261,7 +262,7 @@ async def voice_chat(audio: UploadFile = File(...)):
             "transcription": transcription,
             "response": response_text,
             "sources": result['sources'],
-            "audio_url": f"/api/audio/{output_path.name}"
+            "audio_url": f"/api/audio/{actual_output.name}",
         }
 
     except Exception as e:
@@ -285,11 +286,9 @@ async def get_audio(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
 
-    return FileResponse(
-        file_path,
-        media_type="audio/mpeg",
-        filename=filename
-    )
+    # Serve WAV (Gemini TTS) or MP3 (OpenAI TTS) with the correct MIME type
+    media_type = "audio/wav" if filename.endswith(".wav") else "audio/mpeg"
+    return FileResponse(file_path, media_type=media_type, filename=filename)
 
 
 @app.post("/api/transcribe")
