@@ -25,10 +25,68 @@ This will:
 
 ## 🤖 Supported Providers
 
-- **Google Gemini** (Primary, Auto-configured)
+- **Claude on Amazon Bedrock** (Flagship — see [Claude on Bedrock](#-claude-on-amazon-bedrock-flagship) below)
+- **Anthropic API** (Claude, direct — fallback if Bedrock isn't configured)
+- **Google Gemini** (Auto-configured)
 - **Grok / xAI** (Added via Desktop key)
 - **Perplexity** (Search enabled)
 - **OpenAI** (Fallback)
+
+The conductor auto-detects whichever provider is configured, in that order —
+set `AWS_REGION` with working AWS credentials and Claude on Bedrock takes over
+automatically, no other keys required.
+
+## 🏆 Claude on Amazon Bedrock (flagship)
+
+This is the recommended provider: Claude's model quality, AWS-native
+billing, and no separate Anthropic API key to manage — auth rides on
+whatever AWS credentials the box already has (IAM role, `aws configure`
+profile, or access keys).
+
+### 1. Enable model access
+
+In the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess),
+pick your region and request access to the Claude model(s) you want to use.
+Access is granted per-region and is usually instant.
+
+### 2. Configure credentials
+
+Pick one:
+
+- **IAM role** (recommended for Cloud Run / EC2 / ECS) — attach a role with
+  `bedrock:InvokeModel` / `bedrock:InvokeModelWithResponseStream` on the
+  Claude model ARNs. Nothing else to set besides `AWS_REGION`.
+- **Local dev** — run `aws configure` once, or export:
+
+  ```bash
+  export AWS_REGION=us-east-1
+  export AWS_ACCESS_KEY_ID=AKIA...
+  export AWS_SECRET_ACCESS_KEY=...
+  ```
+
+- **`.env` file** — copy `.env.example` to `.env` and fill in `AWS_REGION`
+  (and the access-key pair if not using a role/profile).
+
+### 3. Pick a model (optional)
+
+`BEDROCK_MODEL_ID` defaults to `anthropic.claude-opus-4-8`, the most capable
+Claude model. Override it to whatever's enabled in your account/region, e.g.:
+
+```env
+BEDROCK_MODEL_ID=anthropic.claude-sonnet-5
+```
+
+### 4. Run it
+
+```bash
+pip install -r requirements.txt
+python -m cli.interactive
+```
+
+No `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` needed — the conductor detects
+`AWS_REGION` + resolvable AWS credentials and routes every chat through
+Claude on Bedrock automatically, for both the CLI and the `/api/chat` web
+endpoint.
 
 ## 🚀 Quick Start
 
@@ -241,10 +299,11 @@ Manager**. Local Docker and Render also work.
 
 ### Required env vars
 
-At least one LLM provider key:
+At least one LLM provider — Claude on Bedrock is recommended:
 
 | Variable | Where to get it |
 |---|---|
+| `AWS_REGION` (+ AWS credentials) | Enable Claude in the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess) for that region — see [Claude on Bedrock](#-claude-on-amazon-bedrock-flagship) |
 | `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
 | `ANTHROPIC_API_KEY` | https://console.anthropic.com/settings/keys |
 | `GOOGLE_API_KEY` | https://aistudio.google.com/app/apikey |
@@ -312,13 +371,31 @@ gcloud run services update conductor-agent --region us-central1 \
 The repo includes `render.yaml`. In the Render dashboard set `OPENAI_API_KEY`
 under **Environment** — do not commit it. Render injects `PORT` automatically.
 
+### Using Bedrock on Cloud Run / Render
+
+Cloud Run and Render don't give containers AWS IAM roles the way EC2/ECS do,
+so pass explicit AWS credentials as secrets alongside `AWS_REGION`:
+
+```bash
+gcloud run deploy conductor-agent \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars AWS_REGION=us-east-1 \
+  --set-secrets AWS_ACCESS_KEY_ID=aws-access-key-id:latest,AWS_SECRET_ACCESS_KEY=aws-secret-access-key:latest
+```
+
+Use an IAM user/role scoped to `bedrock:InvokeModel` and
+`bedrock:InvokeModelWithResponseStream` on the Claude model ARNs only.
+
 ### Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | `502` / "service unavailable" on Cloud Run | Container didn't bind to `$PORT`. Ensure you're using the Dockerfile in this repo (shell-form `CMD`). |
-| Logs show `No LLM API key is configured` | Set `OPENAI_API_KEY` (or `--set-secrets`) and redeploy. |
-| `/api/chat` returns 500 | Check `/health` — if `api_keys_configured: false`, the key isn't reaching the container. |
+| Logs show `No LLM provider is configured` | Set `AWS_REGION` (+ AWS credentials) for Bedrock, or `OPENAI_API_KEY` (`--set-secrets`), and redeploy. |
+| `/api/chat` returns 500 | Check `/health` — if `api_keys_configured: false`, no provider is reaching the container. |
+| Bedrock calls fail with `AccessDeniedException` | Model access isn't enabled for that model/region in the Bedrock console, or the IAM principal lacks `bedrock:InvokeModel*`. |
 | `FileNotFoundError` for `antigravity_brain_dir` | Leave `ANTIGRAVITY_BRAIN_DIR` blank unless you actually have that folder. |
 
 ## 🚧 Future Enhancements

@@ -32,6 +32,7 @@ from knowledge_base.retrieval import ConversationRetriever
 from config.settings import settings
 from utils.logger import logger
 from skills.manager import SkillManager
+from conductor.bedrock_client import BedrockClaude
 
 
 class ConductorAgent:
@@ -54,9 +55,17 @@ class ConductorAgent:
         self.provider = provider
         self.model = settings.conductor_model
         
-        # Detect available providers
+        # Detect available providers. Claude on Bedrock is checked first —
+        # it's the flagship provider for this app (AWS-native auth, no
+        # Anthropic API key needed).
         if provider == "auto":
-            if GOOGLE_AVAILABLE and settings.google_api_key:
+            if settings.bedrock_configured():
+                self.provider = "bedrock"
+                self.model = settings.bedrock_model_id
+            elif settings.anthropic_api_key:
+                self.provider = "anthropic"
+                self.model = "claude-opus-4-8"
+            elif GOOGLE_AVAILABLE and settings.google_api_key:
                 self.provider = "google"
                 self.model = "gemini-1.5-flash"  # Working model
             elif settings.xai_api_key:
@@ -66,7 +75,11 @@ class ConductorAgent:
                 self.provider = "openai"
                 self.model = "gpt-4o-mini"
             else:
-                raise ValueError("No AI provider available. Install google-generativeai or openai.")
+                raise ValueError(
+                    "No AI provider available. Set AWS_REGION (Claude on "
+                    "Bedrock) or install google-generativeai / openai and "
+                    "set the matching API key."
+                )
         
         # Initialize Skills
         skills_path = Path(__file__).parent.parent / "skills"
@@ -88,7 +101,14 @@ class ConductorAgent:
     def _init_client(self):
         """Lazy initialize AI client based on provider."""
         if not self.client:
-            if self.provider == "google":
+            if self.provider == "bedrock":
+                self.client = BedrockClaude(region=settings.aws_region, model=self.model)
+            elif self.provider == "anthropic":
+                if not settings.anthropic_api_key:
+                    raise ValueError("Anthropic API key not configured")
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            elif self.provider == "google":
                 if not settings.google_api_key:
                     raise ValueError("Google API key not configured")
                 genai.configure(api_key=settings.google_api_key)
@@ -195,7 +215,23 @@ Please provide a helpful answer based on this context. Cite which conversations/
 
         # Get completion based on provider
         try:
-            if self.provider == "google":
+            if self.provider == "bedrock":
+                # Use Claude on Amazon Bedrock
+                answer = self.client.chat(
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                    max_tokens=1000,
+                )
+            elif self.provider == "anthropic":
+                # Use Claude via the first-party Anthropic API
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1000,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                answer = "".join(block.text for block in response.content if hasattr(block, "text"))
+            elif self.provider == "google":
                 # Use Google Gemini
                 model = genai.GenerativeModel(self.model)
                 response = model.generate_content(
@@ -332,6 +368,31 @@ Please provide a helpful answer based on this context. Cite which conversations/
 
         # Stream response
         try:
+            # First yield sources
+            yield {'type': 'sources', 'data': sources}
+
+            if self.provider == "bedrock":
+                for text in self.client.stream(
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                    max_tokens=1000,
+                ):
+                    yield {'type': 'content', 'data': text}
+                return
+
+            if self.provider == "anthropic":
+                with self.client.messages.stream(
+                    model=self.model,
+                    max_tokens=1000,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                ) as stream:
+                    for text in stream.text_stream:
+                        yield {'type': 'content', 'data': text}
+                return
+
+            # OpenAI-compatible providers (openai, grok, perplexity via httpx
+            # aside) use the chat.completions streaming shape.
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -342,15 +403,11 @@ Please provide a helpful answer based on this context. Cite which conversations/
                 max_tokens=1000,
                 stream=True
             )
-            
-            # First yield sources
-            yield {'type': 'sources', 'data': sources}
-            
-            # Then stream response
+
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     yield {'type': 'content', 'data': chunk.choices[0].delta.content}
-                    
+
         except Exception as e:
             logger.error(f"Error streaming response: {e}")
             yield {'type': 'error', 'data': str(e)}

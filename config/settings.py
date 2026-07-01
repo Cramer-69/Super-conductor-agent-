@@ -24,7 +24,14 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = None
     perplexity_api_key: Optional[str] = None
     xai_api_key: Optional[str] = None
-    
+
+    # Claude on Amazon Bedrock (flagship provider — see README -> Claude on Bedrock).
+    # Auth uses the standard AWS credential chain (IAM role, `aws configure`
+    # profile, or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars) — no
+    # Anthropic API key required. Only `aws_region` needs to be set.
+    aws_region: Optional[str] = None
+    bedrock_model_id: str = "anthropic.claude-opus-4-8"
+
     # Model Configuration
     conductor_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
@@ -75,12 +82,24 @@ class Settings(BaseSettings):
         base = self.get_base_path()
         return base / self.processed_data_dir
     
+    def bedrock_configured(self) -> bool:
+        """True if Claude-on-Bedrock has a region and AWS credentials the
+        boto3 chain can actually resolve (IAM role, profile, or env keys)."""
+        if not self.aws_region:
+            return False
+        try:
+            import boto3
+            return boto3.Session().get_credentials() is not None
+        except Exception:
+            return False
+
     def validate_api_keys(self) -> bool:
         """Check if at least one LLM API key is configured."""
         return any([
             self.openai_api_key,
             self.anthropic_api_key,
-            self.google_api_key
+            self.google_api_key,
+            self.bedrock_configured(),
         ])
 
     def configured_providers(self) -> list[str]:
@@ -92,22 +111,27 @@ class Settings(BaseSettings):
             "xai": self.xai_api_key,
             "perplexity": self.perplexity_api_key,
         }
-        return [
+        providers = [
             name for name, key in candidates.items()
             if key and not key.startswith("your_")
         ]
+        if self.bedrock_configured():
+            providers.insert(0, "bedrock")
+        return providers
 
     def require_api_key(self) -> None:
         """Fail fast at startup with an actionable error if no key is set."""
         if self.configured_providers():
             return
         raise RuntimeError(
-            "No LLM API key is configured.\n"
+            "No LLM provider is configured.\n"
+            "  - Claude on Bedrock: set AWS_REGION plus AWS credentials "
+            "(IAM role, `aws configure`, or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)\n"
             "  - Local:     copy .env.example -> .env and set OPENAI_API_KEY=sk-...\n"
             "  - Docker:    docker run -e OPENAI_API_KEY=sk-... -p 8080:8080 <image>\n"
             "  - Cloud Run: gcloud run deploy --set-secrets "
             "OPENAI_API_KEY=openai-api-key:latest\n"
-            "See README.md -> Deploy."
+            "See README.md -> Claude on Bedrock."
         )
 
 
