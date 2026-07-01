@@ -1,11 +1,11 @@
-"""Base interface for connectors that inject live context into chat()."""
+"""Base interface for connectors that expose LLM-callable tools."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 class Connector(ABC):
-    """A connector fetches live context from an external service for a query."""
+    """A connector exposes one or more tools the LLM can choose to call."""
 
     name: str = "connector"
 
@@ -14,15 +14,27 @@ class Connector(ABC):
         """Whether the credentials/settings needed to call the service are present."""
 
     @abstractmethod
-    def should_handle(self, query: str) -> bool:
-        """Whether this connector is relevant to the given query."""
+    def tool_specs(self) -> List[Dict[str, Any]]:
+        """Describe this connector's tools in a provider-agnostic shape.
+
+        Each entry:
+            {
+                "name": "get_my_github_activity",
+                "description": "...",
+                "parameters": {   # JSON Schema, "object" type
+                    "type": "object",
+                    "properties": {...},
+                    "required": [...],
+                },
+            }
+        """
 
     @abstractmethod
-    def fetch_context(self, query: str) -> Tuple[str, Dict[str, Any]]:
-        """Fetch context for the query.
+    def call_tool(self, name: str, arguments: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """Execute the named tool with the given arguments.
 
         Returns:
-            (context_text, source_metadata) — context_text is spliced into the
-            LLM prompt the same way retrieved conversation context is;
-            source_metadata is appended to the response's `sources` list.
+            (result_text, source_metadata) — result_text is fed back to the LLM
+            as the tool result; source_metadata is appended to the response's
+            `sources` list.
         """

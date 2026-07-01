@@ -14,9 +14,40 @@ const voiceSelect = document.getElementById('voiceSelect');
 document.addEventListener('DOMContentLoaded', () => {
     setupMicrophone();
     setupTextChat();
+    setupSidebar();
     loadSettings();
     loadConnectionStatus();
 });
+
+// Sidebar: mobile toggle + "new chat" clears the conversation pane
+function setupSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const newChatButton = document.getElementById('newChatButton');
+    const settingsToggle = document.getElementById('settingsToggle');
+    const settingsPanel = document.getElementById('settingsPanel');
+
+    sidebarToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
+    });
+
+    newChatButton.addEventListener('click', () => {
+        messages.innerHTML = `
+            <div class="empty-state">
+                <p class="empty-title">👋 Hi there!</p>
+                <p class="empty-sub">Type a message or tap the mic to start talking</p>
+            </div>
+        `;
+        sidebar.classList.remove('open');
+    });
+
+    settingsToggle.addEventListener('click', () => {
+        settingsPanel.open = !settingsPanel.open;
+        if (settingsPanel.open) {
+            settingsPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    });
+}
 
 // Fetch /health and render the connection status strip
 async function loadConnectionStatus() {
@@ -29,13 +60,13 @@ async function loadConnectionStatus() {
             ? data.providers.join(', ')
             : 'none';
         const connectors = Object.entries(data.connectors || {})
-            .map(([name, on]) => `${dot(on)}${name}`)
-            .join(' ');
+            .map(([name, on]) => `<span>${dot(on)}${name}</span>`)
+            .join('');
 
         el.innerHTML = `
             <span>${dot(data.providers && data.providers.length > 0)}LLM: ${providers}</span>
             <span>${dot(!!data.voice_configured)}Voice</span>
-            ${connectors ? `<span>${connectors}</span>` : ''}
+            ${connectors}
         `;
     } catch (error) {
         el.innerHTML = `<span>${dot(false)}Status unavailable</span>`;
@@ -145,7 +176,6 @@ function startRecording() {
     
     micButton.classList.add('recording');
     recordingIndicator.classList.remove('hidden');
-    recordingIndicator.classList.add('flex');
     showStatus('Listening...', 'recording');
     
     mediaRecorder.start();
@@ -156,7 +186,6 @@ function stopRecording() {
     isRecording = false;
     
     micButton.classList.remove('recording');
-    recordingIndicator.classList.remove('flex');
     recordingIndicator.classList.add('hidden');
     showStatus('Processing...', 'processing');
     
@@ -214,21 +243,18 @@ async function sendVoiceMessage(audioBlob) {
 
 // Add message to conversation
 function addMessage(role, text, small = false) {
+    // Clear the empty-state placeholder on first real message.
+    const emptyState = messages.querySelector('.empty-state');
+    if (emptyState) emptyState.remove();
+
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message p-4 rounded-2xl ${
-        role === 'user' 
-            ? 'bg-white/20 ml-8' 
-            : role === 'assistant'
-            ? 'bg-blue-500/30 mr-8'
-            : 'bg-white/10 text-center'
-    } ${small ? 'text-xs' : 'text-sm'} text-white`;
-    
+    messageDiv.className = `message ${role}${small ? ' small' : ''}`;
     messageDiv.textContent = text;
     messages.appendChild(messageDiv);
-    
+
     // Scroll to bottom
     messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
-    
+
     return messageDiv;
 }
 
@@ -263,7 +289,7 @@ async function playAudio(audioUrl) {
 
 // Show status
 function showStatus(text, type = 'ready') {
-    status.innerHTML = `<p class="text-sm opacity-75">${text}</p>`;
+    status.innerHTML = `<p>${text}</p>`;
 }
 
 // Load/save settings
@@ -300,7 +326,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
     // Show install button (optional)
     const installButton = document.createElement('button');
     installButton.textContent = '📱 Install App';
-    installButton.className = 'glass text-white px-4 py-2 rounded-lg text-sm fixed bottom-4 right-4';
+    installButton.className = 'install-button';
     installButton.addEventListener('click', async () => {
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;

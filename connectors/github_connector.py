@@ -1,7 +1,6 @@
-"""GitHub connector: surfaces the user's open issues/PRs and repo status."""
+"""GitHub connector: surfaces the user's open issues/PRs and repo status as tools."""
 
-import re
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import httpx
 
@@ -9,12 +8,9 @@ from config.settings import settings
 from connectors.base import Connector
 from utils.logger import logger
 
-_KEYWORDS = ("github", "issue", "pull request", " pr ", " prs", "repo")
-_REPO_PATTERN = re.compile(r"\b[\w.-]+/[\w.-]+\b")
-
 
 class GitHubConnector(Connector):
-    """Fetches open PRs, assigned issues, and repo status from the GitHub API."""
+    """Exposes GitHub activity/repo-status tools backed by the GitHub REST API."""
 
     name = "github"
     _BASE_URL = "https://api.github.com"
@@ -22,9 +18,37 @@ class GitHubConnector(Connector):
     def is_configured(self) -> bool:
         return bool(settings.github_token)
 
-    def should_handle(self, query: str) -> bool:
-        q = f" {query.lower()} "
-        return any(kw in q for kw in _KEYWORDS) or bool(_REPO_PATTERN.search(query))
+    def tool_specs(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": "get_my_github_activity",
+                "description": (
+                    "Get the current user's open GitHub pull requests (authored) "
+                    "and issues (assigned). Use when the user asks about their own "
+                    "GitHub activity, open PRs, or assigned issues without naming "
+                    "a specific repo."
+                ),
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+            {
+                "name": "get_github_repo_status",
+                "description": (
+                    "Get status for a specific GitHub repository: description, "
+                    "open issue count, open PR count, default branch. Use when "
+                    "the user names a repo, e.g. 'owner/repo'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "repo": {
+                            "type": "string",
+                            "description": "Repository in 'owner/repo' form, e.g. 'octocat/Hello-World'.",
+                        }
+                    },
+                    "required": ["repo"],
+                },
+            },
+        ]
 
     def _client(self) -> httpx.Client:
         return httpx.Client(
@@ -36,27 +60,34 @@ class GitHubConnector(Connector):
             timeout=10.0,
         )
 
-    def fetch_context(self, query: str) -> Tuple[str, Dict[str, Any]]:
+    def call_tool(self, name: str, arguments: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         try:
             with self._client() as client:
-                repo_match = _REPO_PATTERN.search(query)
-                if repo_match:
-                    text = self._repo_status(client, repo_match.group(0))
-                else:
+                if name == "get_my_github_activity":
                     text = self._my_activity(client)
+                elif name == "get_github_repo_status":
+                    repo = (arguments.get("repo") or "").strip()
+                    if not repo:
+                        return "Please specify a repo in 'owner/repo' form.", {
+                            "platform": "github",
+                            "title": "GitHub (missing argument)",
+                        }
+                    text = self._repo_status(client, repo)
+                else:
+                    raise ValueError(f"Unknown GitHub tool: {name}")
 
             return text, {"platform": "github", "title": "GitHub"}
         except Exception as e:
-            logger.exception(f"GitHub connector failed: {e}")
+            logger.exception(f"GitHub connector tool '{name}' failed: {e}")
             return (
-                f"[Source: GITHUB]\nCould not reach GitHub API: {e}",
+                f"Could not reach GitHub API: {e}",
                 {"platform": "github", "title": "GitHub (error)"},
             )
 
     def _my_activity(self, client: httpx.Client) -> str:
         user_resp = client.get("/user")
         if user_resp.status_code == 401:
-            return "[Source: GITHUB]\nGitHub token is invalid or expired. Update GITHUB_TOKEN and retry."
+            return "GitHub token is invalid or expired. Update GITHUB_TOKEN and retry."
         user_resp.raise_for_status()
         user = user_resp.json()["login"]
 
@@ -76,7 +107,7 @@ class GitHubConnector(Connector):
         issue_lines = [f"- {i['title']} ({i['html_url']})" for i in issues.get("items", [])[:10]]
 
         return (
-            f"[Source: GITHUB - {user}]\n"
+            f"GitHub activity for {user}:\n"
             f"Open pull requests ({prs.get('total_count', 0)}):\n"
             + ("\n".join(pr_lines) or "(none)")
             + f"\n\nOpen issues assigned to you ({issues.get('total_count', 0)}):\n"
@@ -86,7 +117,7 @@ class GitHubConnector(Connector):
     def _repo_status(self, client: httpx.Client, repo: str) -> str:
         repo_resp = client.get(f"/repos/{repo}")
         if repo_resp.status_code == 404:
-            return f"[Source: GITHUB]\nRepo '{repo}' not found or not accessible."
+            return f"Repo '{repo}' not found or not accessible."
         repo_resp.raise_for_status()
         repo_data = repo_resp.json()
 
@@ -101,7 +132,7 @@ class GitHubConnector(Connector):
         issue_count = max(repo_data.get("open_issues_count", 0) - pr_count, 0)
 
         return (
-            f"[Source: GITHUB - {repo}]\n"
+            f"Repo: {repo}\n"
             f"{repo_data.get('description') or '(no description)'}\n"
             f"Open issues: {issue_count}\n"
             f"Open pull requests: {pr_count}\n"
