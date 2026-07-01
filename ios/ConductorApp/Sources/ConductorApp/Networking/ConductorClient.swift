@@ -64,9 +64,15 @@ public final class ConductorClient {
         return try JSONDecoder().decode(ConductorChatResponse.self, from: data)
     }
 
-    /// Sends a recorded voice clip (webm/m4a/wav) and gets back a
-    /// transcription, text response, and a URL to synthesized audio.
-    public func voiceChat(audioData: Data, filename: String = "recording.webm") async throws -> ConductorChatResponse {
+    /// Sends a recorded voice clip and gets back a transcription, text
+    /// response, and a URL to synthesized audio. Defaults match what
+    /// `VoiceRecorder` actually produces (AAC in an .m4a container) —
+    /// override if you record in a different format.
+    public func voiceChat(
+        audioData: Data,
+        filename: String = "recording.m4a",
+        mimeType: String = "audio/m4a"
+    ) async throws -> ConductorChatResponse {
         var request = URLRequest(url: baseURL.appending(path: "api/voice-chat"))
         request.httpMethod = "POST"
 
@@ -78,7 +84,7 @@ public final class ConductorClient {
         httpBody.append(
             "Content-Disposition: form-data; name=\"audio\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!
         )
-        httpBody.append("Content-Type: audio/webm\r\n\r\n".data(using: .utf8)!)
+        httpBody.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         httpBody.append(audioData)
         httpBody.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = httpBody

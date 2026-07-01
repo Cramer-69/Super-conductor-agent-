@@ -108,6 +108,24 @@ def test_run_openai_tool_loop_with_tool_call():
     assert sources == [{"platform": "fake", "title": "Fake"}]
 
 
+def test_run_openai_tool_loop_malformed_arguments_json_does_not_crash():
+    registry = make_registry()
+    sources = []
+    responses = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[_openai_tool_call(args="{not valid json")]))]
+        ),
+        SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="final answer", tool_calls=None))]),
+    ]
+
+    def create(**kwargs):
+        return responses.pop(0)
+
+    answer = run_openai_tool_loop(create, "model", [{"role": "user", "content": "hi"}], registry.tool_specs(), registry, sources)
+    assert answer == "final answer"
+    assert sources == [{"platform": "fake", "title": "Fake"}]
+
+
 def test_run_openai_tool_loop_two_tool_calls_one_turn():
     registry = make_registry()
     sources = []
@@ -136,6 +154,31 @@ def test_run_openai_rest_tool_loop_with_tool_call():
     responses = [
         {"choices": [{"message": {"content": None, "tool_calls": [
             {"id": "call_1", "function": {"name": "fake_tool", "arguments": "{}"}}
+        ]}}]},
+        {"choices": [{"message": {"content": "final answer"}}]},
+    ]
+
+    class FakeResp:
+        def __init__(self, data):
+            self._data = data
+
+        def json(self):
+            return self._data
+
+    def post(url, json):
+        return FakeResp(responses.pop(0))
+
+    answer = run_openai_rest_tool_loop(post, "model", [{"role": "user", "content": "hi"}], registry.tool_specs(), registry, sources)
+    assert answer == "final answer"
+    assert sources == [{"platform": "fake", "title": "Fake"}]
+
+
+def test_run_openai_rest_tool_loop_malformed_arguments_json_does_not_crash():
+    registry = make_registry()
+    sources = []
+    responses = [
+        {"choices": [{"message": {"content": None, "tool_calls": [
+            {"id": "call_1", "function": {"name": "fake_tool", "arguments": "{not valid json"}}
         ]}}]},
         {"choices": [{"message": {"content": "final answer"}}]},
     ]

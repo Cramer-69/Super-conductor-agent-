@@ -211,9 +211,12 @@ async def voice_chat(audio: UploadFile = File(...)):
         JSON with transcription, response text, and URL to audio response
     """
     try:
-        # Save uploaded audio temporarily
+        # Save uploaded audio temporarily, preserving the client's actual
+        # format (e.g. iOS records .m4a, browsers record .webm) — Whisper
+        # infers the audio format from the filename's extension.
         audio_id = str(uuid.uuid4())
-        input_path = TEMP_DIR / f"input_{audio_id}.webm"
+        suffix = Path(audio.filename).suffix if audio.filename else ""
+        input_path = TEMP_DIR / f"input_{audio_id}{suffix or '.webm'}"
 
         with open(input_path, "wb") as f:
             content = await audio.read()
@@ -288,9 +291,10 @@ async def transcribe(audio: UploadFile = File(...)):
         Transcribed text
     """
     try:
-        # Save temporarily
+        # Save temporarily, preserving the client's actual format.
         audio_id = str(uuid.uuid4())
-        temp_path = TEMP_DIR / f"temp_{audio_id}.webm"
+        suffix = Path(audio.filename).suffix if audio.filename else ""
+        temp_path = TEMP_DIR / f"temp_{audio_id}{suffix or '.webm'}"
 
         with open(temp_path, "wb") as f:
             content = await audio.read()

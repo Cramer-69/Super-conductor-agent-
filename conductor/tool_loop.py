@@ -17,6 +17,23 @@ from typing import Any, Callable, Dict, List, Optional
 from connectors.registry import ConnectorRegistry
 
 
+def _safe_json_object(raw: Optional[str]) -> Dict[str, Any]:
+    """Parse a model-provided tool-call arguments string defensively.
+
+    The model can produce malformed JSON (or valid JSON that isn't an
+    object) for `arguments` — never let that raise into the request path;
+    fall back to an empty dict so it's handled via the normal tool-error
+    path instead of crashing the whole chat.
+    """
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def to_openai_tools(tool_specs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Wrap generic tool specs in OpenAI's function-calling envelope.
 
@@ -118,7 +135,7 @@ def run_openai_tool_loop(
             }
         )
         for tc in message.tool_calls:
-            args = json.loads(tc.function.arguments or "{}")
+            args = _safe_json_object(tc.function.arguments)
             result_text = resolve_tool_call(registry, tc.function.name, args, sources, tool_chars)
             messages.append(
                 {"role": "tool", "tool_call_id": tc.id, "content": result_text}
@@ -154,7 +171,7 @@ def run_openai_rest_tool_loop(
     if tool_specs and tool_calls:
         messages.append(message)
         for tc in tool_calls:
-            args = json.loads(tc["function"]["arguments"] or "{}")
+            args = _safe_json_object(tc["function"]["arguments"])
             result_text = resolve_tool_call(registry, tc["function"]["name"], args, sources, tool_chars)
             messages.append(
                 {"role": "tool", "tool_call_id": tc["id"], "content": result_text}
