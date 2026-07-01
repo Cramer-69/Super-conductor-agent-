@@ -22,6 +22,7 @@ temp_audio/
 data/chroma_db/
 data/raw/
 data/processed/
+semantic_wall/data/
 
 # IDE
 .vscode/

@@ -16,16 +16,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-cloud.txt
+          pip install -r semantic_wall/requirements.txt
           pip install flake8 pytest
       - name: Lint with flake8
         run: |
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 . --count --select=E9,F63,F7,F82 --exclude=frontend --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --exclude=frontend --statistics
       - name: Import smoke test
         run: |
           python -c "from conductor.minimal import MinimalConductor"
           python -c "from connectors.registry import ConnectorRegistry"
           python -c "from api.server import app"
+          python -c "from semantic_wall.api.main import app"
       - name: Test with pytest
         run: |
           pytest || ([ $? -eq 5 ] && echo 'No tests collected — skipping' && exit 0)
