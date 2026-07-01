@@ -9,13 +9,22 @@ from utils.logger import logger
 
 
 def _provider_for_keys() -> tuple:
-    """Pick (provider, model) based on which env var is set."""
+    """Pick (provider, model) based on what's configured.
+
+    Claude on Bedrock is checked first — it's the flagship provider for this
+    app (AWS-native auth, no Anthropic API key needed). Falls through to the
+    other providers in order if Bedrock isn't configured.
+    """
+    from conductor.bedrock_client import DEFAULT_MODEL_ID, bedrock_credentials_available
+
+    if (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")) and bedrock_credentials_available():
+        return "bedrock", os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic", "claude-opus-4-8"
     if os.getenv("GOOGLE_API_KEY"):
         return "google", "gemini-1.5-flash"
     if os.getenv("OPENAI_API_KEY", "").startswith("sk-"):
         return "openai", "gpt-4o-mini"
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return "anthropic", "claude-3-5-haiku-latest"
     if os.getenv("XAI_API_KEY"):
         return "xai", "grok-2-latest"
     return "none", "minimal"
@@ -67,6 +76,14 @@ class MinimalConductor:
         )
         return "".join(block.text for block in resp.content if hasattr(block, "text"))
 
+    def _call_bedrock(self, query: str) -> str:
+        from conductor.bedrock_client import BedrockClaude
+        client = BedrockClaude(model=self.model)
+        return client.chat(
+            system=self._system_prompt(),
+            messages=[{"role": "user", "content": query}],
+        )
+
     def _call_xai(self, query: str) -> str:
         from openai import OpenAI
         client = OpenAI(api_key=os.environ["XAI_API_KEY"], base_url="https://api.x.ai/v1")
@@ -81,7 +98,9 @@ class MinimalConductor:
 
     def chat(self, query: str, platform_filter: str = None) -> Dict[str, Any]:
         try:
-            if self.provider == "google":
+            if self.provider == "bedrock":
+                text = self._call_bedrock(query)
+            elif self.provider == "google":
                 text = self._call_google(query)
             elif self.provider == "openai":
                 text = self._call_openai(query)
@@ -92,7 +111,8 @@ class MinimalConductor:
             else:
                 text = (
                     "Minimal mode: no AI provider configured. "
-                    "Set OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY or XAI_API_KEY."
+                    "Set AWS_REGION (for Claude on Bedrock), OPENAI_API_KEY, "
+                    "GOOGLE_API_KEY, ANTHROPIC_API_KEY or XAI_API_KEY."
                 )
         except Exception as e:
             logger.error(f"MinimalConductor provider call failed ({self.provider}): {e}")
