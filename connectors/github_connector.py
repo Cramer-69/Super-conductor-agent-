@@ -79,10 +79,24 @@ class GitHubConnector(Connector):
                     raise ValueError(f"Unknown GitHub tool: {name}")
 
             return text, {"platform": "github", "title": "GitHub"}
+        except httpx.HTTPStatusError as e:
+            logger.exception(f"GitHub connector tool '{name}' got an error response: {e}")
+            status = e.response.status_code
+            if status == 403:
+                message = "GitHub API rate limit or permission error (403)."
+            else:
+                message = f"GitHub API returned an error ({status})."
+            return message, {"platform": "github", "title": "GitHub (error)"}
+        except httpx.RequestError as e:
+            logger.exception(f"GitHub connector tool '{name}' failed to reach the API: {e}")
+            return (
+                f"Could not reach GitHub API: {e}",
+                {"platform": "github", "title": "GitHub (error)"},
+            )
         except Exception as e:
             logger.exception(f"GitHub connector tool '{name}' failed: {e}")
             return (
-                f"Could not reach GitHub API: {e}",
+                f"GitHub connector error: {e}",
                 {"platform": "github", "title": "GitHub (error)"},
             )
 

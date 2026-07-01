@@ -72,7 +72,7 @@ public final class ConductorClient {
     public func voiceChat(
         audioData: Data,
         filename: String = "recording.m4a",
-        mimeType: String = "audio/m4a"
+        mimeType: String = "audio/mp4"  // .m4a is AAC-in-MP4; audio/m4a isn't a standardized MIME type
     ) async throws -> ConductorChatResponse {
         var request = URLRequest(url: baseURL.appending(path: "api/voice-chat"))
         request.httpMethod = "POST"

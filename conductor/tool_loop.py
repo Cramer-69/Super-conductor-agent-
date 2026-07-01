@@ -27,9 +27,11 @@ def _safe_json_object(raw: Optional[str]) -> Dict[str, Any]:
     """
     if not raw:
         return {}
+    if isinstance(raw, dict):
+        return raw
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -141,9 +143,9 @@ def run_openai_tool_loop(
                 {"role": "tool", "tool_call_id": tc.id, "content": result_text}
             )
         follow_up = create(model=model, messages=messages, **create_kwargs)
-        return follow_up.choices[0].message.content
+        return follow_up.choices[0].message.content or ""
 
-    return message.content
+    return message.content or ""
 
 
 def run_openai_rest_tool_loop(
@@ -171,14 +173,16 @@ def run_openai_rest_tool_loop(
     if tool_specs and tool_calls:
         # Build the assistant turn explicitly rather than re-appending the
         # raw response message — not every OpenAI-wire-compatible provider
-        # is guaranteed to include `role` on the message or `type:
-        # "function"` on each tool call the way OpenAI's own API does, and
-        # a missing field here would make the follow-up request invalid.
+        # is guaranteed to include `role` on the message, `type: "function"`
+        # on each tool call, or even all of id/function/name/arguments the
+        # way OpenAI's own API does. Access everything defensively so a
+        # provider quirk degrades a single tool call rather than crashing
+        # the whole request.
         normalized_tool_calls = [
             {
-                "id": tc["id"],
+                "id": tc.get("id", ""),
                 "type": tc.get("type", "function"),
-                "function": tc["function"],
+                "function": tc.get("function", {}),
             }
             for tc in tool_calls
         ]
@@ -190,18 +194,19 @@ def run_openai_rest_tool_loop(
             }
         )
         for tc in tool_calls:
-            args = _safe_json_object(tc["function"]["arguments"])
-            result_text = resolve_tool_call(registry, tc["function"]["name"], args, sources, tool_chars)
+            function = tc.get("function", {})
+            args = _safe_json_object(function.get("arguments"))
+            result_text = resolve_tool_call(registry, function.get("name", ""), args, sources, tool_chars)
             messages.append(
-                {"role": "tool", "tool_call_id": tc["id"], "content": result_text}
+                {"role": "tool", "tool_call_id": tc.get("id", ""), "content": result_text}
             )
         follow_up = post(
             "/chat/completions",
             json=dict(model=model, messages=messages, **payload_kwargs),
         ).json()
-        return follow_up["choices"][0]["message"]["content"]
+        return follow_up["choices"][0]["message"].get("content") or ""
 
-    return message["content"]
+    return message.get("content") or ""
 
 
 def run_anthropic_tool_loop(

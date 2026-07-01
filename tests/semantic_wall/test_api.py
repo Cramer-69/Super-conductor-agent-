@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from semantic_wall import config
 from semantic_wall.api.main import app
 from semantic_wall.checkin import engine as checkin_engine
 
@@ -23,6 +24,47 @@ def test_health_endpoint(client):
     assert body["service"] == "semantic-wall"
     assert "memory_configured" in body
     assert "providers" in body
+
+
+def test_health_endpoint_not_gated_by_api_secret(client, monkeypatch):
+    # /health should stay reachable for monitoring even when the secret is set.
+    monkeypatch.setattr(config.settings, "api_shared_secret", "top-secret")
+    response = client.get("/health")
+    assert response.status_code == 200
+
+
+def test_chat_endpoint_rejects_missing_secret_when_configured(client, monkeypatch):
+    monkeypatch.setattr(config.settings, "api_shared_secret", "top-secret")
+    response = client.post("/api/chat", json={"user_id": "u1", "session_id": "s1", "query": "hello"})
+    assert response.status_code == 401
+
+
+def test_chat_endpoint_rejects_wrong_secret_when_configured(client, monkeypatch):
+    monkeypatch.setattr(config.settings, "api_shared_secret", "top-secret")
+    response = client.post(
+        "/api/chat",
+        json={"user_id": "u1", "session_id": "s1", "query": "hello"},
+        headers={"X-Api-Secret": "wrong-secret"},
+    )
+    assert response.status_code == 401
+
+
+def test_chat_endpoint_accepts_correct_secret_when_configured(client, monkeypatch):
+    monkeypatch.setattr(config.settings, "api_shared_secret", "top-secret")
+    fake_result = {
+        "response": "hi",
+        "agent_id": "strategist",
+        "memories_used": 0,
+        "model": "anthropic:claude-sonnet-5",
+    }
+    with patch("semantic_wall.api.main.SemanticWallAgent") as mock_agent_cls:
+        mock_agent_cls.return_value.chat.return_value = fake_result
+        response = client.post(
+            "/api/chat",
+            json={"user_id": "u1", "session_id": "s1", "query": "hello"},
+            headers={"X-Api-Secret": "top-secret"},
+        )
+    assert response.status_code == 200
 
 
 def test_chat_endpoint_returns_agent_response(client):

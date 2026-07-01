@@ -10,7 +10,7 @@ orchestration themselves.
 import logging
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -35,6 +35,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+async def require_api_secret(x_api_secret: Optional[str] = Header(default=None)):
+    """Gate on a shared secret when one is configured. Not per-user auth —
+    every caller who has the secret can still supply any user_id — but it
+    stops arbitrary internet traffic from reaching these endpoints at all
+    once deployed with allow_origins=["*"]. See config.py's
+    api_shared_secret docstring and README.md's auth warning.
+    """
+    if settings.api_shared_secret and x_api_secret != settings.api_shared_secret:
+        raise HTTPException(status_code=401, detail="Missing or invalid API secret.")
+
 
 class ChatRequest(BaseModel):
     # SECURITY: user_id is trusted as-is with no auth check — see the
@@ -77,7 +88,7 @@ async def health():
     }
 
 
-@app.post("/api/chat", response_model=ChatResponse)
+@app.post("/api/chat", response_model=ChatResponse, dependencies=[Depends(require_api_secret)])
 async def chat(request: ChatRequest):
     try:
         agent = SemanticWallAgent(agent_id=request.agent_id)
@@ -98,7 +109,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail="Internal error processing chat request.")
 
 
-@app.get("/api/checkin/status")
+@app.get("/api/checkin/status", dependencies=[Depends(require_api_secret)])
 async def checkin_status(session_id: str):
     due = checkin_engine.is_checkin_due(session_id)
     return {
@@ -107,7 +118,7 @@ async def checkin_status(session_id: str):
     }
 
 
-@app.post("/api/checkin")
+@app.post("/api/checkin", dependencies=[Depends(require_api_secret)])
 async def submit_checkin(request: CheckinRequest):
     try:
         # Also does synchronous I/O (Supabase writes) when memory is configured.

@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8090
 
+    # Shared-secret gate for /api/chat and /api/checkin (checked against an
+    # X-API-Secret header). This is NOT per-user authentication — it does
+    # not stop one caller from supplying another user's user_id — it only
+    # stops arbitrary internet traffic from reaching the API at all once
+    # deployed with allow_origins=["*"]. Real per-user auth (verify a JWT,
+    # derive user_id from it) is still needed before this is safe for real
+    # user data; see the README's "Not yet safe for real user data" section.
+    api_shared_secret: Optional[str] = None
+
     def is_memory_configured(self) -> bool:
         return bool(self.supabase_url and self.supabase_key)
 

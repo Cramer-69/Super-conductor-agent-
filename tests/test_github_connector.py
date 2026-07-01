@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import httpx
+
 from connectors.github_connector import GitHubConnector
 
 
@@ -112,8 +114,35 @@ def test_call_tool_repo_not_found():
 
 def test_call_tool_unexpected_error_returns_error_source():
     connector = GitHubConnector()
-    with patch.object(connector, "_client", side_effect=RuntimeError("network down")):
+    with patch.object(connector, "_client", side_effect=RuntimeError("boom")):
+        text, source = connector.call_tool("get_my_github_activity", {})
+
+    assert "GitHub connector error" in text
+    assert source["title"] == "GitHub (error)"
+
+
+def test_call_tool_network_error_returns_reach_message():
+    connector = GitHubConnector()
+    with patch.object(connector, "_client", side_effect=httpx.ConnectError("network down")):
         text, source = connector.call_tool("get_my_github_activity", {})
 
     assert "Could not reach GitHub API" in text
+    assert source["title"] == "GitHub (error)"
+
+
+def test_call_tool_rate_limit_returns_specific_message():
+    connector = GitHubConnector()
+    rate_limited_resp = make_response(403, {})
+
+    mock_client = MagicMock()
+    mock_client.get.side_effect = httpx.HTTPStatusError(
+        "403 Forbidden", request=MagicMock(), response=rate_limited_resp
+    )
+    mock_client.__enter__.return_value = mock_client
+    mock_client.__exit__.return_value = False
+
+    with patch.object(connector, "_client", return_value=mock_client):
+        text, source = connector.call_tool("get_my_github_activity", {})
+
+    assert "rate limit or permission" in text.lower()
     assert source["title"] == "GitHub (error)"

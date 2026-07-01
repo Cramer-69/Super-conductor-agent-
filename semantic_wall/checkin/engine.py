@@ -10,6 +10,7 @@ swap _sessions for a Redis/Postgres-backed store before that happens; the
 public function signatures here wouldn't need to change.
 """
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional
@@ -43,32 +44,39 @@ class _SessionActivity:
 
 
 _sessions: Dict[str, _SessionActivity] = {}
+# api/main.py runs chat/check-in work in a threadpool (see run_in_threadpool
+# there), so multiple requests for the same session can race on this dict —
+# guard every read-modify-write against it.
+_sessions_lock = threading.Lock()
 
 
 def record_activity(session_id: str) -> None:
     """Call once per chat turn to accumulate active-usage time for a session."""
     now = time.monotonic()
-    activity = _sessions.setdefault(session_id, _SessionActivity())
+    with _sessions_lock:
+        activity = _sessions.setdefault(session_id, _SessionActivity())
 
-    if activity.last_seen is not None:
-        gap = now - activity.last_seen
-        if gap <= _MAX_ACTIVE_GAP_SECONDS:
-            activity.active_seconds += gap
+        if activity.last_seen is not None:
+            gap = now - activity.last_seen
+            if gap <= _MAX_ACTIVE_GAP_SECONDS:
+                activity.active_seconds += gap
 
-    activity.last_seen = now
+        activity.last_seen = now
 
-    interval_seconds = settings.checkin_interval_minutes * 60
-    if activity.active_seconds - activity.last_checkin_at_seconds >= interval_seconds:
-        activity.checkin_due = True
+        interval_seconds = settings.checkin_interval_minutes * 60
+        if activity.active_seconds - activity.last_checkin_at_seconds >= interval_seconds:
+            activity.checkin_due = True
 
 
 def is_checkin_due(session_id: str) -> bool:
-    activity = _sessions.get(session_id)
-    return bool(activity and activity.checkin_due)
+    with _sessions_lock:
+        activity = _sessions.get(session_id)
+        return bool(activity and activity.checkin_due)
 
 
 def reset_sessions_for_tests() -> None:
-    _sessions.clear()
+    with _sessions_lock:
+        _sessions.clear()
 
 
 def submit_checkin(
@@ -110,9 +118,10 @@ def submit_checkin(
             session_id, outcome_verified=completion_confirmation, quality_score=quality_rating
         )
 
-    activity = _sessions.get(session_id)
-    if activity:
-        activity.checkin_due = False
-        activity.last_checkin_at_seconds = activity.active_seconds
+    with _sessions_lock:
+        activity = _sessions.get(session_id)
+        if activity:
+            activity.checkin_due = False
+            activity.last_checkin_at_seconds = activity.active_seconds
 
     return {"recorded": True, "memory_rows_updated": memory_rows_updated}

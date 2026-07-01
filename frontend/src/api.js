@@ -3,10 +3,14 @@
 // minimal networking layer other clients can copy the shape of.
 
 const BASE_URL = import.meta.env.VITE_SEMANTIC_WALL_URL || 'http://localhost:8090'
+const API_SECRET = import.meta.env.VITE_SEMANTIC_WALL_API_SECRET
 
 async function request(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(API_SECRET ? { 'X-Api-Secret': API_SECRET } : {}),
+    },
     ...options,
   })
   if (!response.ok) {

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from connectors.base import Connector
 from connectors.registry import ConnectorRegistry
 from conductor.tool_loop import (
+    _safe_json_object,
     resolve_tool_call,
     run_anthropic_tool_loop,
     run_gemini_tool_loop,
@@ -45,6 +46,27 @@ def test_to_openai_tools_shape():
     assert wrapped == [
         {"type": "function", "function": {"name": "n", "description": "d", "parameters": {"type": "object"}}}
     ]
+
+
+def test_safe_json_object_valid_json():
+    assert _safe_json_object('{"repo": "a/b"}') == {"repo": "a/b"}
+
+
+def test_safe_json_object_malformed_json_falls_back_to_empty_dict():
+    assert _safe_json_object("{not valid json") == {}
+
+
+def test_safe_json_object_none_falls_back_to_empty_dict():
+    assert _safe_json_object(None) == {}
+
+
+def test_safe_json_object_already_a_dict_passed_through():
+    assert _safe_json_object({"repo": "a/b"}) == {"repo": "a/b"}
+
+
+def test_safe_json_object_non_string_non_dict_does_not_raise():
+    # Some provider quirk handing back e.g. an int — must not raise TypeError.
+    assert _safe_json_object(12345) == {}
 
 
 def test_to_anthropic_tools_shape():
@@ -90,6 +112,17 @@ def test_run_openai_tool_loop_no_tool_call():
     answer = run_openai_tool_loop(create, "model", [{"role": "user", "content": "hi"}], registry.tool_specs(), registry, sources)
     assert answer == "direct answer"
     assert sources == []
+
+
+def test_run_openai_tool_loop_coerces_none_content_to_empty_string():
+    registry = make_registry()
+    sources = []
+
+    def create(**kwargs):
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=None))])
+
+    answer = run_openai_tool_loop(create, "model", [{"role": "user", "content": "hi"}], registry.tool_specs(), registry, sources)
+    assert answer == ""
 
 
 def test_run_openai_tool_loop_with_tool_call():
@@ -171,6 +204,33 @@ def test_run_openai_rest_tool_loop_with_tool_call():
     answer = run_openai_rest_tool_loop(post, "model", [{"role": "user", "content": "hi"}], registry.tool_specs(), registry, sources)
     assert answer == "final answer"
     assert sources == [{"platform": "fake", "title": "Fake"}]
+
+
+def test_run_openai_rest_tool_loop_missing_keys_and_null_content_does_not_crash():
+    """A wire-compatible-but-not-identical provider might omit id/function/
+    name/arguments entirely, or return null content — none of that should
+    raise; an unresolvable tool call should just come back as "not available"
+    via the normal registry path instead of crashing the whole request."""
+    registry = make_registry()
+    sources = []
+    responses = [
+        {"choices": [{"message": {"content": None, "tool_calls": [{}]}}]},
+        {"choices": [{"message": {"content": None}}]},
+    ]
+
+    class FakeResp:
+        def __init__(self, data):
+            self._data = data
+
+        def json(self):
+            return self._data
+
+    def post(url, json):
+        return FakeResp(responses.pop(0))
+
+    answer = run_openai_rest_tool_loop(post, "model", [{"role": "user", "content": "hi"}], registry.tool_specs(), registry, sources)
+    assert answer == ""  # None coerced to "", not propagated
+    assert sources[0]["platform"] == "unknown"  # empty tool name -> "not available" path
 
 
 def test_run_openai_rest_tool_loop_normalizes_assistant_message_for_followup():

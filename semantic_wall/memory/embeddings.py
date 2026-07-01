@@ -79,9 +79,13 @@ class EmbeddingGenerator:
             return None
 
     def _write_cache(self, text: str, embedding: List[float]) -> None:
+        # No text/preview is persisted here — this service stores real user
+        # conversation content, and even a short preview written to disk is
+        # exposure via logs/backups/volume inspection that isn't needed for
+        # the cache to work (the lookup key is already a hash of the text).
         cache_file = self.cache_dir / f"{self._cache_key(text)}.json"
         try:
             with open(cache_file, "w") as f:
-                json.dump({"text_preview": text[:100], "embedding": embedding}, f)
+                json.dump({"embedding": embedding}, f)
         except OSError:
             pass
