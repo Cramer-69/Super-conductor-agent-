@@ -34,7 +34,7 @@ async function loadConnectionStatus() {
 
         el.innerHTML = `
             <span>${dot(data.providers && data.providers.length > 0)}LLM: ${providers}</span>
-            <span>${dot(true)}Voice</span>
+            <span>${dot(!!data.voice_configured)}Voice</span>
             ${connectors ? `<span>${connectors}</span>` : ''}
         `;
     } catch (error) {

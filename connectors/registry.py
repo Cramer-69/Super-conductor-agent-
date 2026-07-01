@@ -20,5 +20,5 @@ class ConnectorRegistry:
             try:
                 results.append(connector.fetch_context(query))
             except Exception as e:
-                logger.warning(f"Connector '{connector.name}' raised unexpectedly: {e}")
+                logger.exception(f"Connector '{connector.name}' raised unexpectedly: {e}")
         return results

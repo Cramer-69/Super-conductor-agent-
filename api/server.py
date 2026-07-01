@@ -165,6 +165,7 @@ async def health_check():
         "providers": providers,
         "api_keys_configured": bool(providers),
         "connectors": settings.configured_connectors(),
+        "voice_configured": bool(settings.openai_api_key),
     }
 
 
