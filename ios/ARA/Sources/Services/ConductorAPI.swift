@@ -41,6 +41,30 @@ struct ConductorAPI {
         return try JSONDecoder().decode(ChatResponse.self, from: data)
     }
 
+    func liveKitToken(
+        firebaseIDToken: String,
+        displayName: String
+    ) async throws -> LiveKitTokenResponse {
+        let url = baseURL.appending(path: "api/mobile/livekit-token")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            "Bearer \(firebaseIDToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+        request.httpBody = try JSONEncoder().encode(
+            LiveKitTokenRequest(displayName: displayName)
+        )
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data)
+        return try JSONDecoder().decode(
+            LiveKitTokenResponse.self,
+            from: data
+        )
+    }
+
     private func validate(response: URLResponse, data: Data) throws {
         guard let response = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
@@ -49,6 +73,14 @@ struct ConductorAPI {
             let body = String(data: data, encoding: .utf8) ?? "No response body"
             throw APIError.server(status: response.statusCode, body: body)
         }
+    }
+}
+
+private struct LiveKitTokenRequest: Encodable {
+    let displayName: String
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
     }
 }
 
