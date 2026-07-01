@@ -18,7 +18,6 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from conductor.agent import ConductorAgent
 from voice.voice_processor import get_voice_processor
 from utils.logger import logger
 from config.settings import settings
@@ -71,6 +70,7 @@ def get_conductor():
                 conductor = MinimalConductor()
                 logger.info("Using minimal conductor (cloud mode - no memory)")
             else:
+                from conductor.agent import ConductorAgent
                 conductor = ConductorAgent()
                 logger.info("Using full conductor (local mode - with memory)")
         except Exception as e:
@@ -164,6 +164,8 @@ async def health_check():
         "mode": "minimal" if _is_cloud() else "full",
         "providers": providers,
         "api_keys_configured": bool(providers),
+        "connectors": settings.configured_connectors(),
+        "voice_configured": bool(settings.openai_api_key),
     }
 
 
@@ -209,9 +211,12 @@ async def voice_chat(audio: UploadFile = File(...)):
         JSON with transcription, response text, and URL to audio response
     """
     try:
-        # Save uploaded audio temporarily
+        # Save uploaded audio temporarily, preserving the client's actual
+        # format (e.g. iOS records .m4a, browsers record .webm) — Whisper
+        # infers the audio format from the filename's extension.
         audio_id = str(uuid.uuid4())
-        input_path = TEMP_DIR / f"input_{audio_id}.webm"
+        suffix = Path(audio.filename).suffix if audio.filename else ""
+        input_path = TEMP_DIR / f"input_{audio_id}{suffix or '.webm'}"
 
         with open(input_path, "wb") as f:
             content = await audio.read()
@@ -286,9 +291,10 @@ async def transcribe(audio: UploadFile = File(...)):
         Transcribed text
     """
     try:
-        # Save temporarily
+        # Save temporarily, preserving the client's actual format.
         audio_id = str(uuid.uuid4())
-        temp_path = TEMP_DIR / f"temp_{audio_id}.webm"
+        suffix = Path(audio.filename).suffix if audio.filename else ""
+        temp_path = TEMP_DIR / f"temp_{audio_id}{suffix or '.webm'}"
 
         with open(temp_path, "wb") as f:
             content = await audio.read()

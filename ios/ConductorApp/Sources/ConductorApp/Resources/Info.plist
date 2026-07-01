@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Copy these keys into the Info.plist that Xcode generates for the App
+      target (see README.md) — this file isn't wired into a build by
+      itself since a plain SwiftPM library target doesn't produce an app
+      bundle's Info.plist.
+    -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Conductor needs microphone access so you can talk to it with your voice.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Conductor uses speech recognition to understand what you say.</string>
+</dict>
+</plist>

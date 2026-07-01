@@ -169,8 +169,8 @@ How did I implement authentication before?
                 for source in sources[:3]:  # Show top 3 sources
                     platform = source['platform'].upper()
                     title = source['title']
-                    score = source['score']
-                    
+                    score = source.get('score')  # connector-sourced entries (e.g. GitHub) have no relevance score
+
                     platform_colors = {
                         'CHATGPT': 'green',
                         'GEMINI': 'blue',
@@ -178,8 +178,9 @@ How did I implement authentication before?
                         'ANTIGRAVITY': 'cyan'
                     }
                     color = platform_colors.get(platform, 'white')
-                    
-                    console.print(f"  [{color}]•[/{color}] {platform}: {title} [dim](relevance: {score:.1%})[/dim]")
+
+                    relevance = f" [dim](relevance: {score:.1%})[/dim]" if score is not None else ""
+                    console.print(f"  [{color}]•[/{color}] {platform}: {title}{relevance}")
                 console.print()
         
         except Exception as e:

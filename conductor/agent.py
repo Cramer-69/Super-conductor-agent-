@@ -11,7 +11,8 @@ GOOGLE_AVAILABLE = False
 OPENAI_AVAILABLE = False
 
 try:
-    import google.generativeai as genai
+    from google import genai as google_genai
+    from google.genai import types as google_genai_types
     GOOGLE_AVAILABLE = True
 except (ImportError, Exception) as e:
     pass
@@ -32,6 +33,14 @@ from knowledge_base.retrieval import ConversationRetriever
 from config.settings import settings
 from utils.logger import logger
 from skills.manager import SkillManager
+from connectors.registry import ConnectorRegistry
+from connectors.github_connector import GitHubConnector
+from conductor.tool_loop import (
+    run_gemini_tool_loop,
+    run_openai_rest_tool_loop,
+    run_openai_tool_loop,
+    to_gemini_tools,
+)
 
 
 class ConductorAgent:
@@ -58,7 +67,7 @@ class ConductorAgent:
         if provider == "auto":
             if GOOGLE_AVAILABLE and settings.google_api_key:
                 self.provider = "google"
-                self.model = "gemini-1.5-flash"  # Working model
+                self.model = "gemini-2.5-flash"
             elif settings.xai_api_key:
                 self.provider = "grok"
                 self.model = "grok-2-latest"
@@ -72,6 +81,9 @@ class ConductorAgent:
         skills_path = Path(__file__).parent.parent / "skills"
         self.skill_manager = SkillManager(skills_path)
         self.current_skill = None
+
+        # Initialize Connectors
+        self.connector_registry = ConnectorRegistry([GitHubConnector()])
         
         logger.info(f"Initialized conductor agent with {self.provider.upper()}, model: {self.model}")
         logger.info(f"Loaded {len(self.skill_manager.skills)} skills")
@@ -91,8 +103,7 @@ class ConductorAgent:
             if self.provider == "google":
                 if not settings.google_api_key:
                     raise ValueError("Google API key not configured")
-                genai.configure(api_key=settings.google_api_key)
-                self.client = "gemini"  # Flag
+                self.client = google_genai.Client(api_key=settings.google_api_key)
             elif self.provider == "grok":
                 if not settings.xai_api_key:
                     raise ValueError("xAI/Grok API key not configured")
@@ -157,16 +168,16 @@ class ConductorAgent:
                 'score': result['score']
             }
             sources.append(source_info)
-            
+
             # Add to context
             context_parts.append(
                 f"[Source: {meta['platform'].upper()} - {meta['title']}]\n{content}"
             )
-        
+
         context = "\n\n---\n\n".join(context_parts)
-        
+
         # Build prompt
-        base_system_prompt = """You are a helpful AI assistant with access to the user's conversation history across multiple AI platforms (ChatGPT, Gemini, Grok, and Antigravity).
+        base_system_prompt = """You are a helpful AI assistant with access to the user's conversation history across multiple AI platforms (ChatGPT, Gemini, Grok, and Antigravity). You also have tools available for live external context (e.g. GitHub) — call them when the query genuinely needs current external data, not for every query.
 
 Your role is to:
 1. Answer questions using the provided context from past conversations
@@ -195,41 +206,51 @@ Please provide a helpful answer based on this context. Cite which conversations/
 
         # Get completion based on provider
         try:
+            tool_specs = self.connector_registry.tool_specs()
+
             if self.provider == "google":
-                # Use Google Gemini
-                model = genai.GenerativeModel(self.model)
-                response = model.generate_content(
-                    f"{system_prompt}\n\n{user_prompt}",
-                    generation_config={"temperature": 0.7, "max_output_tokens": 1000}
-                )
-                answer = response.text
-            elif self.provider == "grok":
-                # Use Grok/xAI
-                response = self.client.post(
-                    "/chat/completions",
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.7,
-                        "max_tokens": 1000
-                    }
-                ).json()
-                answer = response['choices'][0]['message']['content']
-            elif self.provider == "openai":
-                # Use OpenAI
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                # Use Google Gemini (google-genai SDK), with real tool-calling.
+                gemini_tools = to_gemini_tools(tool_specs) if tool_specs else None
+                config = google_genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    tools=gemini_tools,
                     temperature=0.7,
-                    max_tokens=1000
+                    max_output_tokens=1000,
                 )
-                answer = response.choices[0].message.content
+                chat = self.client.chats.create(model=self.model, config=config)
+                answer = run_gemini_tool_loop(chat, user_prompt, tool_specs, self.connector_registry, sources)
+            elif self.provider == "grok":
+                # Use Grok/xAI — OpenAI-wire-compatible, so it gets real tool-calling too.
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+                answer = run_openai_rest_tool_loop(
+                    self.client.post,
+                    self.model,
+                    messages,
+                    tool_specs,
+                    self.connector_registry,
+                    sources,
+                    temperature=0.7,
+                    max_tokens=1000,
+                )
+            elif self.provider == "openai":
+                # Use OpenAI, with real tool-calling for connectors (GitHub, etc.)
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+                answer = run_openai_tool_loop(
+                    self.client.chat.completions.create,
+                    self.model,
+                    messages,
+                    tool_specs,
+                    self.connector_registry,
+                    sources,
+                    temperature=0.7,
+                    max_tokens=1000,
+                )
             elif self.provider == "perplexity":
                 # Use Perplexity
                 response = self.client.post(
@@ -295,13 +316,17 @@ Please provide a helpful answer based on this context. Cite which conversations/
                 'title': meta['title'],
                 'score': result['score']
             })
-            
+
             context_parts.append(
                 f"[Source: {meta['platform'].upper()} - {meta['title']}]\n{content}"
             )
-        
+
+        # Note: connector tools (e.g. GitHub) aren't wired into streaming —
+        # a streaming tool-loop needs to buffer deltas to detect a full
+        # tool-call before executing it, which is out of scope here. Only
+        # the non-streaming chat() method gets live tool-calling for now.
         context = "\n\n---\n\n".join(context_parts)
-        
+
         # Build prompt
         base_system_prompt = """You are a helpful AI assistant with access to the user's conversation history across multiple AI platforms (ChatGPT, Gemini, Grok, and Antigravity).
 
@@ -366,4 +391,6 @@ if __name__ == "__main__":
     print(result['response'])
     print(f"\nSources: {len(result['sources'])}")
     for source in result['sources']:
-        print(f"  - {source['platform'].upper()}: {source['title']} (score: {source['score']:.2f})")
+        score = source.get('score')  # connector-sourced entries (e.g. GitHub) have no relevance score
+        score_suffix = f" (score: {score:.2f})" if score is not None else ""
+        print(f"  - {source['platform'].upper()}: {source['title']}{score_suffix}")

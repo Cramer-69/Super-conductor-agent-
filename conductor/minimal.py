@@ -4,14 +4,18 @@ Calls whichever LLM provider has a key set (Google/Gemini, OpenAI,
 Anthropic, or xAI/Grok). No ChromaDB, no heavy local deps.
 """
 import os
-from typing import Dict, Any, Iterator
+from typing import Any, Dict, Iterator, List
+
 from utils.logger import logger
+from connectors.registry import ConnectorRegistry
+from connectors.github_connector import GitHubConnector
+from conductor.tool_loop import run_anthropic_tool_loop, run_gemini_tool_loop, run_openai_tool_loop, to_gemini_tools
 
 
 def _provider_for_keys() -> tuple:
     """Pick (provider, model) based on which env var is set."""
     if os.getenv("GOOGLE_API_KEY"):
-        return "google", "gemini-1.5-flash"
+        return "google", "gemini-2.5-flash"
     if os.getenv("OPENAI_API_KEY", "").startswith("sk-"):
         return "openai", "gpt-4o-mini"
     if os.getenv("ANTHROPIC_API_KEY"):
@@ -29,6 +33,7 @@ class MinimalConductor:
         self.current_skill = None
         self.skill_manager = None
         self.provider, self.model = _provider_for_keys()
+        self.connector_registry = ConnectorRegistry([GitHubConnector()])
         logger.info(f"MinimalConductor initialized (provider={self.provider}, model={self.model})")
 
     def activate_skill(self, skill_name: str) -> bool:
@@ -37,58 +42,81 @@ class MinimalConductor:
     def _system_prompt(self) -> str:
         return "You are Conductor, a helpful voice AI assistant. Be concise and conversational."
 
-    def _call_google(self, query: str) -> str:
-        import google.generativeai as genai
-        genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-        model = genai.GenerativeModel(self.model, system_instruction=self._system_prompt())
-        resp = model.generate_content(query)
-        return resp.text or ""
+    def _call_google(self, query: str, sources: List[Dict[str, Any]], tool_chars: List[int]) -> str:
+        from google import genai
+        from google.genai import types
 
-    def _call_openai(self, query: str) -> str:
+        client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+        tool_specs = self.connector_registry.tool_specs()
+        config = types.GenerateContentConfig(
+            system_instruction=self._system_prompt(),
+            tools=to_gemini_tools(tool_specs) if tool_specs else None,
+        )
+        chat = client.chats.create(model=self.model, config=config)
+        return run_gemini_tool_loop(chat, query, tool_specs, self.connector_registry, sources, tool_chars)
+
+    def _call_openai(self, query: str, sources: List[Dict[str, Any]], tool_chars: List[int]) -> str:
         from openai import OpenAI
         client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        resp = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": self._system_prompt()},
-                {"role": "user", "content": query},
-            ],
+        messages = [
+            {"role": "system", "content": self._system_prompt()},
+            {"role": "user", "content": query},
+        ]
+        return run_openai_tool_loop(
+            client.chat.completions.create,
+            self.model,
+            messages,
+            self.connector_registry.tool_specs(),
+            self.connector_registry,
+            sources,
+            tool_chars,
         )
-        return resp.choices[0].message.content or ""
 
-    def _call_anthropic(self, query: str) -> str:
+    def _call_anthropic(self, query: str, sources: List[Dict[str, Any]], tool_chars: List[int]) -> str:
         import anthropic
         client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-        resp = client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=self._system_prompt(),
-            messages=[{"role": "user", "content": query}],
+        messages = [{"role": "user", "content": query}]
+        return run_anthropic_tool_loop(
+            client.messages.create,
+            self.model,
+            self._system_prompt(),
+            messages,
+            self.connector_registry.tool_specs(),
+            self.connector_registry,
+            sources,
+            tool_chars,
         )
-        return "".join(block.text for block in resp.content if hasattr(block, "text"))
 
-    def _call_xai(self, query: str) -> str:
+    def _call_xai(self, query: str, sources: List[Dict[str, Any]], tool_chars: List[int]) -> str:
         from openai import OpenAI
         client = OpenAI(api_key=os.environ["XAI_API_KEY"], base_url="https://api.x.ai/v1")
-        resp = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": self._system_prompt()},
-                {"role": "user", "content": query},
-            ],
+        messages = [
+            {"role": "system", "content": self._system_prompt()},
+            {"role": "user", "content": query},
+        ]
+        return run_openai_tool_loop(
+            client.chat.completions.create,
+            self.model,
+            messages,
+            self.connector_registry.tool_specs(),
+            self.connector_registry,
+            sources,
+            tool_chars,
         )
-        return resp.choices[0].message.content or ""
 
     def chat(self, query: str, platform_filter: str = None) -> Dict[str, Any]:
+        sources: List[Dict[str, Any]] = []
+        tool_chars: List[int] = []
+
         try:
             if self.provider == "google":
-                text = self._call_google(query)
+                text = self._call_google(query, sources, tool_chars)
             elif self.provider == "openai":
-                text = self._call_openai(query)
+                text = self._call_openai(query, sources, tool_chars)
             elif self.provider == "anthropic":
-                text = self._call_anthropic(query)
+                text = self._call_anthropic(query, sources, tool_chars)
             elif self.provider == "xai":
-                text = self._call_xai(query)
+                text = self._call_xai(query, sources, tool_chars)
             else:
                 text = (
                     "Minimal mode: no AI provider configured. "
@@ -100,14 +128,15 @@ class MinimalConductor:
 
         return {
             "response": text,
-            "sources": [],
-            "context_used": 0,
+            "sources": sources,
+            "context_used": sum(tool_chars),
             "model": f"{self.provider}:{self.model}",
         }
 
     def stream_chat(self, query: str, platform_filter: str = None) -> Iterator[Dict[str, Any]]:
-        yield {"type": "sources", "data": []}
-        resp = self.chat(query, platform_filter=platform_filter)["response"]
+        result = self.chat(query, platform_filter=platform_filter)
+        yield {"type": "sources", "data": result["sources"]}
+        resp = result["response"]
         chunk_size = 120
         for i in range(0, len(resp), chunk_size):
             yield {"type": "content", "data": resp[i : i + chunk_size]}
