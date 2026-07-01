@@ -3,6 +3,7 @@
 -- fresh Supabase project before setting SUPABASE_URL/SUPABASE_KEY.
 
 create extension if not exists vector;
+create extension if not exists pgcrypto; -- provides gen_random_uuid() on Postgres < 13
 
 create table if not exists memories (
     id uuid primary key default gen_random_uuid(),

@@ -44,7 +44,8 @@ public final class ConductorClient {
     }
 
     public func health() async throws -> ConductorHealth {
-        let (data, _) = try await URLSession.shared.data(from: baseURL.appending(path: "health"))
+        let (data, response) = try await URLSession.shared.data(from: baseURL.appending(path: "health"))
+        try Self.validate(response)
         return try JSONDecoder().decode(ConductorHealth.self, from: data)
     }
 

@@ -152,10 +152,10 @@ def test_run_openai_rest_tool_loop_with_tool_call():
     registry = make_registry()
     sources = []
     responses = [
-        {"choices": [{"message": {"content": None, "tool_calls": [
+        {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [
             {"id": "call_1", "function": {"name": "fake_tool", "arguments": "{}"}}
         ]}}]},
-        {"choices": [{"message": {"content": "final answer"}}]},
+        {"choices": [{"message": {"role": "assistant", "content": "final answer"}}]},
     ]
 
     class FakeResp:
@@ -177,10 +177,10 @@ def test_run_openai_rest_tool_loop_malformed_arguments_json_does_not_crash():
     registry = make_registry()
     sources = []
     responses = [
-        {"choices": [{"message": {"content": None, "tool_calls": [
+        {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [
             {"id": "call_1", "function": {"name": "fake_tool", "arguments": "{not valid json"}}
         ]}}]},
-        {"choices": [{"message": {"content": "final answer"}}]},
+        {"choices": [{"message": {"role": "assistant", "content": "final answer"}}]},
     ]
 
     class FakeResp:

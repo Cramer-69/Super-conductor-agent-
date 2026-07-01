@@ -7,6 +7,7 @@ ios/ConductorApp/) can connect to instead of re-implementing memory/agent
 orchestration themselves.
 """
 
+import logging
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -18,12 +19,18 @@ from semantic_wall.checkin import engine as checkin_engine
 from semantic_wall.config import settings
 from semantic_wall.db.supabase_client import is_configured as memory_is_configured
 
+logger = logging.getLogger("semantic_wall")
+
 app = FastAPI(title="Semantic Wall", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
+    # No cookies/credentialed requests are used (user_id travels in the
+    # JSON body, not a session cookie) — allow_credentials=True combined
+    # with a wildcard origin is rejected by browsers anyway, so leave it
+    # False rather than restricting allow_origins for no reason.
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -80,7 +87,8 @@ async def chat(request: ChatRequest):
             checkin_due=checkin_engine.is_checkin_due(request.session_id),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Unhandled error in /api/chat: {e}")
+        raise HTTPException(status_code=500, detail="Internal error processing chat request.")
 
 
 @app.get("/api/checkin/status")
