@@ -1,0 +1,48 @@
+name: ARA
+
+options:
+  bundleIdPrefix: com.cramerconsulting
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.2"
+
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    from: 12.0.0
+  LiveKit:
+    url: https://github.com/livekit/client-sdk-swift.git
+    from: 2.5.0
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  ARA:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Configuration
+        excludes:
+          - Info.plist
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cramerconsulting.conductoragent
+        PRODUCT_NAME: ARA
+        INFOPLIST_FILE: Configuration/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: false
+    dependencies:
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseAuth
+      - package: LiveKit
+        product: LiveKit
+    scheme:
+      testTargets: []
