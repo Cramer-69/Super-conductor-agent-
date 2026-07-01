@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from semantic_wall.agent.core import SemanticWallAgent
 from semantic_wall.checkin import engine as checkin_engine
@@ -36,6 +37,9 @@ app.add_middleware(
 )
 
 class ChatRequest(BaseModel):
+    # SECURITY: user_id is trusted as-is with no auth check — see the
+    # "Not yet safe for real user data" warning in README.md before
+    # deploying this anywhere reachable by untrusted clients.
     user_id: str
     session_id: str
     query: str
@@ -77,7 +81,10 @@ async def health():
 async def chat(request: ChatRequest):
     try:
         agent = SemanticWallAgent(agent_id=request.agent_id)
-        result = agent.chat(request.user_id, request.session_id, request.query)
+        # agent.chat() does synchronous network I/O (LLM call, optional
+        # Supabase read/write) — run it off the event loop so one slow
+        # request doesn't stall every other connection this worker holds.
+        result = await run_in_threadpool(agent.chat, request.user_id, request.session_id, request.query)
         checkin_engine.record_activity(request.session_id)
         return ChatResponse(
             response=result["response"],
@@ -103,7 +110,9 @@ async def checkin_status(session_id: str):
 @app.post("/api/checkin")
 async def submit_checkin(request: CheckinRequest):
     try:
-        result = checkin_engine.submit_checkin(
+        # Also does synchronous I/O (Supabase writes) when memory is configured.
+        result = await run_in_threadpool(
+            checkin_engine.submit_checkin,
             user_id=request.user_id,
             session_id=request.session_id,
             agent_id=request.agent_id,
@@ -117,6 +126,11 @@ async def submit_checkin(request: CheckinRequest):
         return result
     except checkin_engine.CheckinValidationError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unhandled error in /api/checkin: {e}")
+        raise HTTPException(status_code=500, detail="Internal error processing check-in.")
 
 
 if __name__ == "__main__":

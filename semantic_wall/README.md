@@ -101,6 +101,20 @@ gcloud run deploy semantic-wall --image <your-registry>/semantic-wall \
 see the sibling app's own `../README.md` Deploy section for the Secret
 Manager pattern already established in this repo.)
 
+## ⚠️ Not yet safe for real user data: no authentication
+
+`user_id` is a plain field in the request body — anyone calling `/api/chat`
+or `/api/checkin` can supply any `user_id` they like and read or write
+*that* user's memory. There is no token/session validation anywhere in
+this service. Combined with Supabase's service-role key (which bypasses
+the RLS policies in `db/schema.sql`), this means **the API currently
+trusts the caller completely**. Do not point this at real user data or
+deploy it somewhere reachable by untrusted clients until this is fixed —
+derive `user_id` from a verified token (the blueprint's own later phases
+call for Supabase Auth with OAuth/JWT for exactly this reason) rather than
+trusting the request body. This is a hole, not a rough edge — treat it as
+a blocker for any real deployment, not a nice-to-have.
+
 ## Known Phase 1 limitations
 
 - **Check-in activity tracking is in-process memory** (`checkin/engine.py`),

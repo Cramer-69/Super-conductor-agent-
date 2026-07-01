@@ -173,6 +173,42 @@ def test_run_openai_rest_tool_loop_with_tool_call():
     assert sources == [{"platform": "fake", "title": "Fake"}]
 
 
+def test_run_openai_rest_tool_loop_normalizes_assistant_message_for_followup():
+    """A wire-compatible-but-not-identical provider might omit `role` on the
+    message or `type` on each tool call — the loop must still produce a
+    valid assistant turn for the follow-up request rather than replaying
+    the raw (possibly incomplete) response verbatim."""
+    registry = make_registry()
+    sources = []
+    responses = [
+        # Deliberately missing "role" on the message and "type" on the tool call.
+        {"choices": [{"message": {"content": None, "tool_calls": [
+            {"id": "call_1", "function": {"name": "fake_tool", "arguments": "{}"}}
+        ]}}]},
+        {"choices": [{"message": {"role": "assistant", "content": "final answer"}}]},
+    ]
+    sent_payloads = []
+
+    class FakeResp:
+        def __init__(self, data):
+            self._data = data
+
+        def json(self):
+            return self._data
+
+    def post(url, json):
+        sent_payloads.append(json)
+        return FakeResp(responses.pop(0))
+
+    answer = run_openai_rest_tool_loop(post, "model", [{"role": "user", "content": "hi"}], registry.tool_specs(), registry, sources)
+    assert answer == "final answer"
+
+    followup_messages = sent_payloads[-1]["messages"]
+    assistant_turn = next(m for m in followup_messages if m.get("role") == "assistant" and "tool_calls" in m)
+    assert assistant_turn["tool_calls"][0]["type"] == "function"
+    assert assistant_turn["tool_calls"][0]["id"] == "call_1"
+
+
 def test_run_openai_rest_tool_loop_malformed_arguments_json_does_not_crash():
     registry = make_registry()
     sources = []

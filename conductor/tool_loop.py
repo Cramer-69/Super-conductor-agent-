@@ -169,7 +169,26 @@ def run_openai_rest_tool_loop(
     tool_calls = message.get("tool_calls")
 
     if tool_specs and tool_calls:
-        messages.append(message)
+        # Build the assistant turn explicitly rather than re-appending the
+        # raw response message — not every OpenAI-wire-compatible provider
+        # is guaranteed to include `role` on the message or `type:
+        # "function"` on each tool call the way OpenAI's own API does, and
+        # a missing field here would make the follow-up request invalid.
+        normalized_tool_calls = [
+            {
+                "id": tc["id"],
+                "type": tc.get("type", "function"),
+                "function": tc["function"],
+            }
+            for tc in tool_calls
+        ]
+        messages.append(
+            {
+                "role": "assistant",
+                "content": message.get("content"),
+                "tool_calls": normalized_tool_calls,
+            }
+        )
         for tc in tool_calls:
             args = _safe_json_object(tc["function"]["arguments"])
             result_text = resolve_tool_call(registry, tc["function"]["name"], args, sources, tool_chars)

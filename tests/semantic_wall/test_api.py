@@ -139,3 +139,21 @@ def test_submit_checkin_engine_validation_error_returns_422(client):
             },
         )
     assert response.status_code == 422
+
+
+def test_submit_checkin_unexpected_error_returns_500(client):
+    with patch.object(checkin_engine, "submit_checkin", side_effect=RuntimeError("supabase down")):
+        response = client.post(
+            "/api/checkin",
+            json={
+                "user_id": "u1",
+                "session_id": "s1",
+                "completion_confirmation": True,
+                "quality_rating": 3,
+                "improvement_note": "worked great honestly",
+                "used_in_real_work": True,
+                "willingness_to_pay": "yes",
+            },
+        )
+    assert response.status_code == 500
+    assert "supabase down" not in response.text
