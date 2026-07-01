@@ -1,6 +1,6 @@
 name: Python Package
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   build-linux:
@@ -21,6 +21,11 @@ jobs:
         run: |
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Import smoke test
+        run: |
+          python -c "from conductor.minimal import MinimalConductor"
+          python -c "from connectors.registry import ConnectorRegistry"
+          python -c "from api.server import app"
       - name: Test with pytest
         run: |
           pytest || ([ $? -eq 5 ] && echo 'No tests collected — skipping' && exit 0)

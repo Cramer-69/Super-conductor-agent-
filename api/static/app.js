@@ -15,7 +15,37 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMicrophone();
     setupTextChat();
     loadSettings();
+    loadConnectionStatus();
 });
+
+// Fetch /health and render the connection status strip
+async function loadConnectionStatus() {
+    const el = document.getElementById('connectionStatus');
+    try {
+        const response = await fetch('/health');
+        const data = await response.json();
+
+        const providers = data.providers && data.providers.length
+            ? data.providers.join(', ')
+            : 'none';
+        const connectors = Object.entries(data.connectors || {})
+            .map(([name, on]) => `${dot(on)}${name}`)
+            .join(' ');
+
+        el.innerHTML = `
+            <span>${dot(data.providers && data.providers.length > 0)}LLM: ${providers}</span>
+            <span>${dot(true)}Voice</span>
+            ${connectors ? `<span>${connectors}</span>` : ''}
+        `;
+    } catch (error) {
+        el.innerHTML = `<span>${dot(false)}Status unavailable</span>`;
+        console.error('Health check failed:', error);
+    }
+}
+
+function dot(isOn) {
+    return `<span class="status-dot ${isOn ? 'on' : 'off'}"></span>`;
+}
 
 // Setup text chat
 function setupTextChat() {
@@ -115,6 +145,7 @@ function startRecording() {
     
     micButton.classList.add('recording');
     recordingIndicator.classList.remove('hidden');
+    recordingIndicator.classList.add('flex');
     showStatus('Listening...', 'recording');
     
     mediaRecorder.start();
@@ -125,6 +156,7 @@ function stopRecording() {
     isRecording = false;
     
     micButton.classList.remove('recording');
+    recordingIndicator.classList.remove('flex');
     recordingIndicator.classList.add('hidden');
     showStatus('Processing...', 'processing');
     

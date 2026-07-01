@@ -32,6 +32,8 @@ from knowledge_base.retrieval import ConversationRetriever
 from config.settings import settings
 from utils.logger import logger
 from skills.manager import SkillManager
+from connectors.registry import ConnectorRegistry
+from connectors.github_connector import GitHubConnector
 
 
 class ConductorAgent:
@@ -72,6 +74,9 @@ class ConductorAgent:
         skills_path = Path(__file__).parent.parent / "skills"
         self.skill_manager = SkillManager(skills_path)
         self.current_skill = None
+
+        # Initialize Connectors
+        self.connector_registry = ConnectorRegistry([GitHubConnector()])
         
         logger.info(f"Initialized conductor agent with {self.provider.upper()}, model: {self.model}")
         logger.info(f"Loaded {len(self.skill_manager.skills)} skills")
@@ -157,16 +162,20 @@ class ConductorAgent:
                 'score': result['score']
             }
             sources.append(source_info)
-            
+
             # Add to context
             context_parts.append(
                 f"[Source: {meta['platform'].upper()} - {meta['title']}]\n{content}"
             )
-        
+
+        for connector_context, connector_source in self.connector_registry.gather(query):
+            sources.append(connector_source)
+            context_parts.append(connector_context)
+
         context = "\n\n---\n\n".join(context_parts)
-        
+
         # Build prompt
-        base_system_prompt = """You are a helpful AI assistant with access to the user's conversation history across multiple AI platforms (ChatGPT, Gemini, Grok, and Antigravity).
+        base_system_prompt = """You are a helpful AI assistant with access to the user's conversation history across multiple AI platforms (ChatGPT, Gemini, Grok, and Antigravity), plus live context from connected services like GitHub when relevant.
 
 Your role is to:
 1. Answer questions using the provided context from past conversations
@@ -295,15 +304,19 @@ Please provide a helpful answer based on this context. Cite which conversations/
                 'title': meta['title'],
                 'score': result['score']
             })
-            
+
             context_parts.append(
                 f"[Source: {meta['platform'].upper()} - {meta['title']}]\n{content}"
             )
-        
+
+        for connector_context, connector_source in self.connector_registry.gather(query):
+            sources.append(connector_source)
+            context_parts.append(connector_context)
+
         context = "\n\n---\n\n".join(context_parts)
-        
+
         # Build prompt
-        base_system_prompt = """You are a helpful AI assistant with access to the user's conversation history across multiple AI platforms (ChatGPT, Gemini, Grok, and Antigravity).
+        base_system_prompt = """You are a helpful AI assistant with access to the user's conversation history across multiple AI platforms (ChatGPT, Gemini, Grok, and Antigravity), plus live context from connected services like GitHub when relevant.
 
 Your role is to:
 1. Answer questions using the provided context from past conversations

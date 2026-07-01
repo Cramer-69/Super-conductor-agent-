@@ -6,6 +6,8 @@ Anthropic, or xAI/Grok). No ChromaDB, no heavy local deps.
 import os
 from typing import Dict, Any, Iterator
 from utils.logger import logger
+from connectors.registry import ConnectorRegistry
+from connectors.github_connector import GitHubConnector
 
 
 def _provider_for_keys() -> tuple:
@@ -29,6 +31,7 @@ class MinimalConductor:
         self.current_skill = None
         self.skill_manager = None
         self.provider, self.model = _provider_for_keys()
+        self.connector_registry = ConnectorRegistry([GitHubConnector()])
         logger.info(f"MinimalConductor initialized (provider={self.provider}, model={self.model})")
 
     def activate_skill(self, skill_name: str) -> bool:
@@ -80,15 +83,24 @@ class MinimalConductor:
         return resp.choices[0].message.content or ""
 
     def chat(self, query: str, platform_filter: str = None) -> Dict[str, Any]:
+        connector_results = self.connector_registry.gather(query)
+        sources = [source for _, source in connector_results]
+
+        if connector_results:
+            context = "\n\n---\n\n".join(ctx for ctx, _ in connector_results)
+            augmented_query = f"{query}\n\nRelevant live context:\n{context}"
+        else:
+            augmented_query = query
+
         try:
             if self.provider == "google":
-                text = self._call_google(query)
+                text = self._call_google(augmented_query)
             elif self.provider == "openai":
-                text = self._call_openai(query)
+                text = self._call_openai(augmented_query)
             elif self.provider == "anthropic":
-                text = self._call_anthropic(query)
+                text = self._call_anthropic(augmented_query)
             elif self.provider == "xai":
-                text = self._call_xai(query)
+                text = self._call_xai(augmented_query)
             else:
                 text = (
                     "Minimal mode: no AI provider configured. "
@@ -100,14 +112,15 @@ class MinimalConductor:
 
         return {
             "response": text,
-            "sources": [],
-            "context_used": 0,
+            "sources": sources,
+            "context_used": len(augmented_query) - len(query),
             "model": f"{self.provider}:{self.model}",
         }
 
     def stream_chat(self, query: str, platform_filter: str = None) -> Iterator[Dict[str, Any]]:
-        yield {"type": "sources", "data": []}
-        resp = self.chat(query, platform_filter=platform_filter)["response"]
+        result = self.chat(query, platform_filter=platform_filter)
+        yield {"type": "sources", "data": result["sources"]}
+        resp = result["response"]
         chunk_size = 120
         for i in range(0, len(resp), chunk_size):
             yield {"type": "content", "data": resp[i : i + chunk_size]}

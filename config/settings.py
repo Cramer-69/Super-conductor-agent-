@@ -5,7 +5,7 @@ Loads settings from environment variables and .env file.
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 
 class Settings(BaseSettings):
@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = None
     perplexity_api_key: Optional[str] = None
     xai_api_key: Optional[str] = None
-    
+
+    # Connectors
+    github_token: Optional[str] = None
+
     # Model Configuration
     conductor_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
@@ -96,6 +99,10 @@ class Settings(BaseSettings):
             name for name, key in candidates.items()
             if key and not key.startswith("your_")
         ]
+
+    def configured_connectors(self) -> Dict[str, bool]:
+        """Return which external connectors have credentials configured."""
+        return {"github": bool(self.github_token)}
 
     def require_api_key(self) -> None:
         """Fail fast at startup with an actionable error if no key is set."""

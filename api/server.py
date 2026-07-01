@@ -18,7 +18,6 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from conductor.agent import ConductorAgent
 from voice.voice_processor import get_voice_processor
 from utils.logger import logger
 from config.settings import settings
@@ -71,6 +70,7 @@ def get_conductor():
                 conductor = MinimalConductor()
                 logger.info("Using minimal conductor (cloud mode - no memory)")
             else:
+                from conductor.agent import ConductorAgent
                 conductor = ConductorAgent()
                 logger.info("Using full conductor (local mode - with memory)")
         except Exception as e:
@@ -164,6 +164,7 @@ async def health_check():
         "mode": "minimal" if _is_cloud() else "full",
         "providers": providers,
         "api_keys_configured": bool(providers),
+        "connectors": settings.configured_connectors(),
     }
 
 
