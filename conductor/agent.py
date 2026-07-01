@@ -391,4 +391,6 @@ if __name__ == "__main__":
     print(result['response'])
     print(f"\nSources: {len(result['sources'])}")
     for source in result['sources']:
-        print(f"  - {source['platform'].upper()}: {source['title']} (score: {source['score']:.2f})")
+        score = source.get('score')  # connector-sourced entries (e.g. GitHub) have no relevance score
+        score_suffix = f" (score: {score:.2f})" if score is not None else ""
+        print(f"  - {source['platform'].upper()}: {source['title']}{score_suffix}")

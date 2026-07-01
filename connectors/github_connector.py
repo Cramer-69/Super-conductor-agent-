@@ -1,12 +1,14 @@
 """GitHub connector: surfaces the user's open issues/PRs and repo status as tools."""
 
+import logging
 from typing import Any, Dict, List, Tuple
 
 import httpx
 
 from config.settings import settings
 from connectors.base import Connector
-from utils.logger import logger
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubConnector(Connector):

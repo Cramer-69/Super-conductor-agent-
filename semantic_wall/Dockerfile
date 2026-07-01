@@ -22,6 +22,16 @@ COPY semantic_wall/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY semantic_wall/ ./semantic_wall/
+# agent/core.py reuses these two sibling packages directly (the
+# already-tested provider completion loops and the Connector interface)
+# rather than reimplementing them — both are lightweight (stdlib logging
+# only, no rich/config.settings/heavy SDK imports), so this doesn't pull
+# in the sibling app's own dependency footprint.
+COPY conductor/tool_loop.py ./conductor/tool_loop.py
+COPY conductor/__init__.py ./conductor/__init__.py
+COPY connectors/base.py ./connectors/base.py
+COPY connectors/registry.py ./connectors/registry.py
+COPY connectors/__init__.py ./connectors/__init__.py
 
 EXPOSE 8080
 

@@ -1,9 +1,14 @@
 """Registry that aggregates tool specs and dispatches tool calls to connectors."""
 
+import logging
 from typing import Any, Dict, List, Tuple
 
 from connectors.base import Connector
-from utils.logger import logger
+
+# Plain stdlib logging (not utils.logger) — this package is reused by
+# semantic_wall/ (see agent/core.py), which doesn't want the sibling app's
+# rich/config.settings dependency chain just to use ConnectorRegistry.
+logger = logging.getLogger(__name__)
 
 
 class ConnectorRegistry:
