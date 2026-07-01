@@ -66,3 +66,17 @@ struct HealthResponse: Decodable {
         case activeModel = "active_model"
     }
 }
+
+struct LiveKitTokenResponse: Decodable {
+    let serverURL: String
+    let participantToken: String
+    let roomName: String
+    let expiresIn: Int
+
+    enum CodingKeys: String, CodingKey {
+        case serverURL = "server_url"
+        case participantToken = "participant_token"
+        case roomName = "room_name"
+        case expiresIn = "expires_in"
+    }
+}

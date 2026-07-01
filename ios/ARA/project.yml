@@ -10,6 +10,9 @@ packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk.git
     from: 12.0.0
+  LiveKit:
+    url: https://github.com/livekit/client-sdk-swift.git
+    from: 2.5.0
 
 settings:
   base:
@@ -37,5 +40,9 @@ targets:
     dependencies:
       - package: Firebase
         product: FirebaseCore
+      - package: Firebase
+        product: FirebaseAuth
+      - package: LiveKit
+        product: LiveKit
     scheme:
       testTargets: []
