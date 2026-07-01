@@ -1,0 +1,35 @@
+name: ARA iOS compile
+
+on:
+  push:
+    branches:
+      - codex/ara-ios-mvp
+    paths:
+      - "ios/ARA/**"
+      - ".github/workflows/ara-ios-build.yml"
+  pull_request:
+    paths:
+      - "ios/ARA/**"
+      - ".github/workflows/ara-ios-build.yml"
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios/ARA
+        run: xcodegen generate
+      - name: Compile without signing
+        working-directory: ios/ARA
+        run: |
+          xcodebuild \
+            -project ARA.xcodeproj \
+            -scheme ARA \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
