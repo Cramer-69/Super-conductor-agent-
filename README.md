@@ -248,9 +248,50 @@ At least one LLM provider key:
 | `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
 | `ANTHROPIC_API_KEY` | https://console.anthropic.com/settings/keys |
 | `GOOGLE_API_KEY` | https://aistudio.google.com/app/apikey |
+| `AWS_BEARER_TOKEN_BEDROCK` *or* `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` | AWS Bedrock (see below) |
 
 The container binds to `0.0.0.0:${PORT}` (default `8080`). Cloud Run / Render
 inject `PORT` automatically.
+
+### AWS Bedrock
+
+Bedrock lets you reach Claude, Titan, Llama and others through your AWS
+account. The conductor auto-selects `bedrock` when Bedrock credentials are
+present and no higher-priority key is set. Calls go through Bedrock's
+model-agnostic **Converse** API, so you only need to change `BEDROCK_MODEL_ID`
+to switch models.
+
+**One-time AWS setup**
+
+1. In the [Bedrock console](https://console.aws.amazon.com/bedrock/), open
+   **Model access** and request access to the model you want (e.g. a Claude
+   model). Approval is usually instant.
+2. Note the **region** — it must be one where both Bedrock and that model are
+   available (e.g. `us-east-1`).
+
+**Authentication — pick one**
+
+- **Bedrock API key (simplest):** Bedrock console → **API keys** → *Generate*.
+  Set `AWS_BEARER_TOKEN_BEDROCK=...`.
+- **AWS access keys:** an IAM user/role with the `bedrock:InvokeModel`
+  permission. IAM → Users → *Security credentials* → *Create access key*.
+  Set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN`
+  for temporary STS credentials).
+
+If the app runs on AWS (ECS/EC2/Lambda) with an attached IAM role that has
+Bedrock permissions, you can leave all of the above unset — boto3 uses the
+instance role automatically; just set `AWS_REGION` and `BEDROCK_MODEL_ID`.
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e AWS_REGION=us-east-1 \
+  -e AWS_BEARER_TOKEN_BEDROCK=your_bedrock_api_key \
+  -e BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20240620-v1:0 \
+  conductor-agent
+```
+
+Confirm with `/health` — `providers` should include `bedrock` and
+`api_keys_configured` should be `true`.
 
 ### Local Docker
 

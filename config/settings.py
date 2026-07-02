@@ -24,6 +24,17 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = None
     perplexity_api_key: Optional[str] = None
     xai_api_key: Optional[str] = None
+
+    # AWS Bedrock (access Claude / Titan / Llama etc. through AWS)
+    # Auth is either a Bedrock API key (bearer token) OR standard AWS
+    # access-key credentials. boto3 also picks these up from the ambient
+    # environment / instance role if they are left unset here.
+    aws_region: str = "us-east-1"
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None
+    aws_bearer_token_bedrock: Optional[str] = None
+    bedrock_model_id: str = "anthropic.claude-3-5-sonnet-20240620-v1:0"
     
     # Model Configuration
     conductor_model: str = "gpt-4o-mini"
@@ -75,12 +86,29 @@ class Settings(BaseSettings):
         base = self.get_base_path()
         return base / self.processed_data_dir
     
+    def bedrock_configured(self) -> bool:
+        """True if AWS Bedrock has usable credentials.
+
+        Either a Bedrock API key (bearer token) or an access-key pair.
+        Placeholder values (``your_...``) do not count.
+        """
+        bearer = self.aws_bearer_token_bedrock
+        if bearer and not bearer.startswith("your_"):
+            return True
+        key = self.aws_access_key_id
+        secret = self.aws_secret_access_key
+        return bool(
+            key and not key.startswith("your_")
+            and secret and not secret.startswith("your_")
+        )
+
     def validate_api_keys(self) -> bool:
         """Check if at least one LLM API key is configured."""
         return any([
             self.openai_api_key,
             self.anthropic_api_key,
-            self.google_api_key
+            self.google_api_key,
+            self.bedrock_configured(),
         ])
 
     def configured_providers(self) -> list[str]:
@@ -92,10 +120,13 @@ class Settings(BaseSettings):
             "xai": self.xai_api_key,
             "perplexity": self.perplexity_api_key,
         }
-        return [
+        providers = [
             name for name, key in candidates.items()
             if key and not key.startswith("your_")
         ]
+        if self.bedrock_configured():
+            providers.append("bedrock")
+        return providers
 
     def require_api_key(self) -> None:
         """Fail fast at startup with an actionable error if no key is set."""

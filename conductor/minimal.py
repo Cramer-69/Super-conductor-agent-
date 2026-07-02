@@ -8,6 +8,13 @@ from typing import Dict, Any, Iterator
 from utils.logger import logger
 
 
+def _bedrock_creds_present() -> bool:
+    """True if AWS Bedrock has usable credentials in the environment."""
+    if os.getenv("AWS_BEARER_TOKEN_BEDROCK"):
+        return True
+    return bool(os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
+
+
 def _provider_for_keys() -> tuple:
     """Pick (provider, model) based on which env var is set."""
     if os.getenv("GOOGLE_API_KEY"):
@@ -18,6 +25,10 @@ def _provider_for_keys() -> tuple:
         return "anthropic", "claude-3-5-haiku-latest"
     if os.getenv("XAI_API_KEY"):
         return "xai", "grok-2-latest"
+    if _bedrock_creds_present():
+        return "bedrock", os.getenv(
+            "BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        )
     return "none", "minimal"
 
 
@@ -79,6 +90,30 @@ class MinimalConductor:
         )
         return resp.choices[0].message.content or ""
 
+    def _call_bedrock(self, query: str) -> str:
+        import boto3
+
+        client_kwargs = {"region_name": os.getenv("AWS_REGION", "us-east-1")}
+        # Explicit access-key credentials override the ambient chain. A
+        # Bedrock API key (AWS_BEARER_TOKEN_BEDROCK) or an instance role is
+        # picked up automatically by boto3 when these are absent.
+        if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+            client_kwargs["aws_access_key_id"] = os.environ["AWS_ACCESS_KEY_ID"]
+            client_kwargs["aws_secret_access_key"] = os.environ["AWS_SECRET_ACCESS_KEY"]
+            if os.getenv("AWS_SESSION_TOKEN"):
+                client_kwargs["aws_session_token"] = os.environ["AWS_SESSION_TOKEN"]
+
+        client = boto3.client("bedrock-runtime", **client_kwargs)
+        # The Converse API is model-agnostic across Bedrock providers.
+        resp = client.converse(
+            modelId=self.model,
+            system=[{"text": self._system_prompt()}],
+            messages=[{"role": "user", "content": [{"text": query}]}],
+            inferenceConfig={"maxTokens": 1024, "temperature": 0.7},
+        )
+        blocks = resp["output"]["message"]["content"]
+        return "".join(b.get("text", "") for b in blocks)
+
     def chat(self, query: str, platform_filter: str = None) -> Dict[str, Any]:
         try:
             if self.provider == "google":
@@ -89,10 +124,14 @@ class MinimalConductor:
                 text = self._call_anthropic(query)
             elif self.provider == "xai":
                 text = self._call_xai(query)
+            elif self.provider == "bedrock":
+                text = self._call_bedrock(query)
             else:
                 text = (
                     "Minimal mode: no AI provider configured. "
-                    "Set OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY or XAI_API_KEY."
+                    "Set OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY, "
+                    "XAI_API_KEY, or AWS Bedrock credentials "
+                    "(AWS_BEARER_TOKEN_BEDROCK or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY)."
                 )
         except Exception as e:
             logger.error(f"MinimalConductor provider call failed ({self.provider}): {e}")

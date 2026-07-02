@@ -65,8 +65,11 @@ class ConductorAgent:
             elif OPENAI_AVAILABLE and settings.openai_api_key:
                 self.provider = "openai"
                 self.model = "gpt-4o-mini"
+            elif settings.bedrock_configured():
+                self.provider = "bedrock"
+                self.model = settings.bedrock_model_id
             else:
-                raise ValueError("No AI provider available. Install google-generativeai or openai.")
+                raise ValueError("No AI provider available. Install google-generativeai or openai, or configure AWS Bedrock.")
         
         # Initialize Skills
         skills_path = Path(__file__).parent.parent / "skills"
@@ -111,6 +114,17 @@ class ConductorAgent:
                     base_url="https://api.perplexity.ai",
                     headers={"Authorization": f"Bearer {settings.perplexity_api_key}"}
                 )
+            elif self.provider == "bedrock":
+                if not settings.bedrock_configured():
+                    raise ValueError("AWS Bedrock credentials not configured")
+                import boto3
+                client_kwargs = {"region_name": settings.aws_region}
+                if settings.aws_access_key_id and settings.aws_secret_access_key:
+                    client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+                    client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+                    if settings.aws_session_token:
+                        client_kwargs["aws_session_token"] = settings.aws_session_token
+                self.client = boto3.client("bedrock-runtime", **client_kwargs)
             else:
                 raise ValueError(f"Unknown provider: {self.provider}")
     
@@ -244,6 +258,18 @@ Please provide a helpful answer based on this context. Cite which conversations/
                     }
                 ).json()
                 answer = response['choices'][0]['message']['content']
+            elif self.provider == "bedrock":
+                # Use AWS Bedrock via the model-agnostic Converse API
+                response = self.client.converse(
+                    modelId=self.model,
+                    system=[{"text": system_prompt}],
+                    messages=[{"role": "user", "content": [{"text": user_prompt}]}],
+                    inferenceConfig={"maxTokens": 1000, "temperature": 0.7},
+                )
+                answer = "".join(
+                    b.get("text", "")
+                    for b in response["output"]["message"]["content"]
+                )
             else:
                 raise ValueError(f"Unknown provider: {self.provider}")
             
@@ -332,6 +358,15 @@ Please provide a helpful answer based on this context. Cite which conversations/
 
         # Stream response
         try:
+            # Only the OpenAI client supports token streaming here; other
+            # providers (Bedrock, Google, Grok, Perplexity) fall back to a
+            # single non-streamed answer emitted as one chunk.
+            if self.provider != "openai":
+                yield {'type': 'sources', 'data': sources}
+                result = self.chat(query, platform_filter=platform_filter)
+                yield {'type': 'content', 'data': result['response']}
+                return
+
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -342,15 +377,15 @@ Please provide a helpful answer based on this context. Cite which conversations/
                 max_tokens=1000,
                 stream=True
             )
-            
+
             # First yield sources
             yield {'type': 'sources', 'data': sources}
-            
+
             # Then stream response
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     yield {'type': 'content', 'data': chunk.choices[0].delta.content}
-                    
+
         except Exception as e:
             logger.error(f"Error streaming response: {e}")
             yield {'type': 'error', 'data': str(e)}
